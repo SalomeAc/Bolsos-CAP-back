@@ -1,6 +1,36 @@
 const productDAO = require("../dao/productDAO");
 const Product = require("../models/product");
 
+const toArray = (value) => {
+  if (!value) return [];
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => toArray(item)).map((item) => String(item).trim()).filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [String(value).trim()].filter(Boolean);
+};
+
+const normalizeProduct = (product) => {
+  if (!product) return product;
+
+  const plainProduct = product.toObject ? product.toObject() : { ...product };
+
+  return {
+    ...plainProduct,
+    color: toArray(plainProduct.color || plainProduct.colors),
+    dimensions: toArray(plainProduct.dimensions || plainProduct.dimension),
+    materials: toArray(plainProduct.materials),
+  };
+};
+
 const createProduct = async (req, res) => {
   try {
     const product = await productDAO.createProduct(req.body);
@@ -17,7 +47,7 @@ const getProducts = async (req, res) => {
   try {
     const products = await productDAO.getProducts();
 
-    res.json(products);
+    res.json(products.map(normalizeProduct));
   } catch (error) {
     res.status(500).json({
       error: error.message,
@@ -35,7 +65,7 @@ const getProductById = async (req, res) => {
       });
     }
 
-    res.json(product);
+    res.json(normalizeProduct(product));
   } catch (error) {
     res.status(500).json({
       error: error.message,
@@ -60,7 +90,7 @@ const updateProduct = async (req, res) => {
       });
     }
 
-    res.json(updatedProduct);
+    res.json(normalizeProduct(updatedProduct));
 
   } catch (error) {
     res.status(400).json({
