@@ -27,12 +27,9 @@ MongoDB (Atlas) vía Mongoose. Documenta la conexión, las **colecciones existen
 |-------|------|-------|
 | `_id` | ObjectId | PK |
 | `firstName`, `lastName` | String | Requeridos (trim) |
-| `age` | Number | ≥13; requerido salvo Google (no presente en los docs de Google actuales) |
 | `email` | String | **Único**, validado |
-| `password` | String | Requerida salvo Google; hash bcrypt |
 | `authProvider` | String | `local` \| `google` |
 | `googleId` | String | **Único + sparse** |
-| `resetPasswordToken` / `resetPasswordExpires` | String / Date | Recuperación de contraseña |
 | `isActive` | Boolean | default `true` |
 | `isAdmin` | Boolean | default `false` |
 

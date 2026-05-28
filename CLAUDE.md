@@ -6,7 +6,7 @@ Guía para trabajar en este repositorio. El equipo trabaja en español; mensajes
 
 API REST (backend) de **Bolsos-CAP**. Gestiona **usuarios** (registro local, login con Google, recuperación de contraseña por correo y CRUD de perfil) y **productos** (CRUD básico). El módulo de productos es reciente y, a diferencia de usuarios, **no sigue el patrón `Global*`** (ver Notas).
 
-`Lumo` es el nombre del frontend; `MVPI` aparece como firma en algunos correos. El producto es **Bolsos-CAP**.
+`Bolsos-CAP-Front` es el nombre del frontend; `MVPI` aparece como firma en algunos correos. El producto es **Bolsos-CAP**.
 
 ## Documentación del proyecto
 
@@ -50,10 +50,7 @@ api/utils/mailer.js       → sendMail (nodemailer/Gmail)
 
 | Método | Ruta                      | Auth | Acción |
 |--------|---------------------------|------|--------|
-| POST   | `/register`               | No   | Registro local (password + confirmPassword) |
 | POST   | `/login`                  | No   | Login con Google (recibe idToken/credential) |
-| POST   | `/recover-password`       | No   | Envía correo con token de reset |
-| POST   | `/reset-password/:token`  | No   | Cambia contraseña con token |
 | GET    | `/user-profile`           | Sí   | Devuelve perfil del usuario autenticado |
 | PUT    | `/update-profile`         | Sí   | Actualiza perfil |
 | PUT    | `/deactivate`             | Sí   | Marca `isActive: false` |
@@ -72,10 +69,8 @@ api/utils/mailer.js       → sendMail (nodemailer/Gmail)
 
 ## Modelo User
 
-Campos: `firstName`, `lastName`, `age` (≥13, opcional si es Google), `email` (único, validado), `password` (requerida y validada salvo Google), `authProvider` (`local`/`google`), `googleId`, `resetPasswordToken/Expires`, `isActive`, `isAdmin`.
+Campos: `firstName`, `lastName`, `email` (único, validado), `authProvider` (`local`/`google`), `googleId`, `isActive`, `isAdmin`.
 
-- Hook `pre("save")`: hashea la contraseña con bcrypt si fue modificada.
-- Hook `post("findOneAndUpdate")`: re-hashea si la contraseña actualizada no empieza con `$2b$`.
 
 ## Modelo Product
 
@@ -98,6 +93,6 @@ node index.js        # levanta en http://localhost:3000 (o PORT)
 
 ## Notas
 
-- El endpoint `/login` **solo** maneja autenticación con Google (decisión intencional). El `/register` local con contraseña existe, pero no hay login local por email/contraseña; queda así a propósito.
+- El endpoint `/login` **solo** maneja autenticación con Google
 - Existen los módulos de **usuarios** y **productos**. El de usuarios sigue el patrón `Global*`; el de productos **no** (funciones sueltas, sin auth en sus rutas, y update/delete saltándose el DAO). Idealmente productos debería refactorizarse hacia el patrón `Global*` descrito arriba.
 - `package.json` referencia un repo remoto antiguo (`emilynunezordonez/Bolsos_CAP_Backend`) distinto del `origin` actual (`SalomeAc/Bolsos-CAP-back`).

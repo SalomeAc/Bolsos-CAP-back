@@ -2,7 +2,7 @@
 
 Backend (API REST) de **Bolsos-CAP**. Plataforma tipo *e-commerce* para **bolsos tejidos a crochet**: como cada pieza es hecha a mano, **no hay precios fijos**, todo se vende por **cotización**.
 
-> El frontend del proyecto se llama **Lumo**. La administradora (admin) gestiona el catálogo, refina cotizaciones y administra pedidos.
+> El frontend del proyecto se llama **Bolsos CAP**. La administradora (admin) gestiona el catálogo, refina cotizaciones y administra pedidos.
 
 ## Tabla de contenidos
 
@@ -74,8 +74,6 @@ MONGO_URI=mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/bolsoscap?retryWrite
 JWT_SECRET=tu_secreto_jwt
 PORT=3000
 GOOGLE_CLIENT_ID=tu_google_client_id
-EMAIL_USER=tu_correo@gmail.com
-EMAIL_PASS=tu_app_password_de_gmail
 NODE_ENV=development
 ```
 
@@ -152,9 +150,8 @@ JWT firmado con `JWT_SECRET`, expira en **1 hora**. Payload: `{ id, email, provi
 
 Flujo:
 
-1. **Registro local:** `POST /api/users/register`. Crea el usuario; **no** devuelve token (no hay login local todavía — es una decisión intencional del producto).
-2. **Login con Google:** `POST /api/users/login` con el `idToken` del frontend → devuelve `{ token }`.
-3. Las llamadas autenticadas envían `Authorization: Bearer <token>`.
+1. **Login con Google:** `POST /api/users/login` con el `idToken` del frontend → devuelve `{ token }`.
+2. Las llamadas autenticadas envían `Authorization: Bearer <token>`.
 
 ```
 Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
@@ -170,10 +167,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 | Método | Ruta                      | Auth | Descripción |
 |--------|---------------------------|------|-------------|
-| POST   | `/register`               | —    | Registro local |
 | POST   | `/login`                  | —    | Login con Google |
-| POST   | `/recover-password`       | —    | Envía correo de recuperación |
-| POST   | `/reset-password/:token`  | —    | Restablece la contraseña |
 | GET    | `/user-profile`           | 🔒   | Perfil del usuario autenticado |
 | PUT    | `/update-profile`         | 🔒   | Actualiza el perfil |
 | PUT    | `/deactivate`             | 🔒   | Desactiva la cuenta |
@@ -209,32 +203,6 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 ### Usuarios (`/api/users`)
 
-#### `POST /api/users/register` — Registro local
-
-**Body:**
-```json
-{
-  "firstName": "Ana",
-  "lastName": "Pérez",
-  "age": 22,
-  "email": "ana@ejemplo.com",
-  "password": "Aa1!segura",
-  "confirmPassword": "Aa1!segura"
-}
-```
-
-**Validaciones:**
-- `password` ≥ 8 caracteres, con al menos 1 mayúscula, 1 minúscula, 1 número y 1 carácter especial.
-- `age` ≥ 13.
-- `password` y `confirmPassword` deben coincidir.
-
-**Respuestas:**
-- `201` `{ "message": "Registro exitoso" }`
-- `400` `{ "message": "Las contraseñas no coinciden" }` · `"Todos los campos son obligatorios"` · mensaje de validación del schema.
-- `409` `{ "message": "Email ya registrado" }`
-
----
-
 #### `POST /api/users/login` — Login con Google
 
 **Body** (acepta `idToken`, `credential` o `token` como llave):
@@ -252,30 +220,6 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 ---
 
-#### `POST /api/users/recover-password` — Pedir correo de recuperación
-
-**Body:** `{ "email": "ana@ejemplo.com" }`
-
-**Respuestas:**
-- `200` `{ "message": "Email de recuperar contraseña enviado" }`
-- `400` `{ "message": "Email es requerido" }`
-- `404` `{ "message": "Usuario no encontrado" }`
-
-> ⚠️ Requiere `EMAIL_USER` / `EMAIL_PASS` en `.env`. El enlace generado apunta a `https://lumo-front-jtug.vercel.app/reset-password/?token=...` (frontend) y expira en 1 hora.
-
----
-
-#### `POST /api/users/reset-password/:token` — Restablecer contraseña
-
-**Body:** `{ "password": "Nuevo123!", "confirmPassword": "Nuevo123!" }`
-
-**Respuestas:**
-- `200` `{ "message": "Password has been reset successfully" }`
-- `400` `{ "message": "Token no válida o expirada" }` · `"Las contraseñas no coinciden"` · validación.
-
-> Tras un cambio exitoso, se envía un correo de confirmación al usuario.
-
----
 
 #### `GET /api/users/user-profile` 🔒 — Perfil del usuario autenticado
 
@@ -284,7 +228,6 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 {
   "firstName": "Ana",
   "lastName": "Pérez",
-  "age": 22,
   "email": "ana@ejemplo.com"
 }
 ```
@@ -294,17 +237,15 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 #### `PUT /api/users/update-profile` 🔒 — Actualizar perfil
 
-**Body** (todos opcionales; si se envía `password` debe ir con `confirmPassword`):
+**Body** (todos opcionales):
 ```json
-{ "firstName": "Ana María", "password": "Nueva123!", "confirmPassword": "Nueva123!" }
+{ "firstName": "Ana María", "lastName": "Gomez"}
 ```
 
 **Respuestas:**
 - `200` `{ "message": "Perfil exitosamente actualizado" }`
-- `400` `{ "message": "Las contraseñas no coinciden" }` o validación.
 - `409` `{ "message": "Email ya registrado" }`
 
-> La nueva contraseña se hashea automáticamente (hook `post("findOneAndUpdate")`).
 
 ---
 
@@ -542,9 +483,7 @@ GET /api/quotations?kind=custom
 | Campo | Tipo | Notas |
 |-------|------|-------|
 | `firstName`, `lastName` | String | Requeridos |
-| `age` | Number | ≥13; opcional para usuarios de Google |
 | `email` | String | Único y validado |
-| `password` | String | Requerida y validada (no aplica a Google); hasheada con bcrypt |
 | `authProvider` | String | `local` o `google` |
 | `googleId` | String | Único, sparse |
 | `isActive` | Boolean | default `true` |
