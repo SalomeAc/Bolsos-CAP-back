@@ -10,9 +10,6 @@ router.get("/user-profile", authenticateToken, (req, res) =>
 );
 
 
-router.post("/register", (req, res) => UserController.registerUser(req, res));
-
-
 router.post("/login", (req, res) => UserController.loginUser(req, res));
 
 
@@ -23,16 +20,6 @@ router.put("/update-profile", authenticateToken, (req, res) =>
 
 router.delete("/delete-user", authenticateToken, (req, res) =>
   UserController.deleteUser(req, res),
-);
-
-
-router.post("/recover-password", (req, res) =>
-  UserController.forgotPassword(req, res),
-);
-
-
-router.post("/reset-password/:token", (req, res) =>
-  UserController.resetPassword(req, res),
 );
 
 

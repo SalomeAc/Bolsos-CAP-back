@@ -176,7 +176,7 @@ const MessageSchema = new mongoose.Schema(
 - Cada `message:send` se **persiste** antes de hacer broadcast.
 - Endpoint REST de respaldo para cargar el historial al abrir el chat: `GET /api/quotations/:id/messages`.
 
-**Infra:** instanciar `http.createServer(app)` + `Server` de Socket.io en `index.js`; CORS alineado con el frontend (Lumo).
+**Infra:** instanciar `http.createServer(app)` + `Server` de Socket.io en `index.js`; CORS alineado con el frontend (Bolsos CAP).
 
 ---
 
