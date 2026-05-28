@@ -97,6 +97,15 @@ class UserController extends GlobalController {
       return res.status(200).json({
         message: "Login con Google exitoso",
         token,
+        user: {
+          _id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          picture: user.picture || "",
+          isAdmin: user.isAdmin,
+          authProvider: user.authProvider,
+        },
       });
 
     } catch (err) {
