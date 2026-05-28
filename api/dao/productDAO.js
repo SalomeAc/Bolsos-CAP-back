@@ -8,6 +8,10 @@ const getProducts = async () => {
   return await Product.find();
 };
 
+const getProductById = async (id) => {
+  return await Product.findById(id);
+};
+
 const updateProduct = async (id, data) => {
   return await Product.findByIdAndUpdate(id, data, {
     new: true,
@@ -22,6 +26,7 @@ const deleteProduct = async (id) => {
 module.exports = {
   createProduct,
   getProducts,
+  getProductById,
   updateProduct,
   deleteProduct,
 };

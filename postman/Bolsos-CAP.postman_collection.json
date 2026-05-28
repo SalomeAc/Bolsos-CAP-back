@@ -1,0 +1,413 @@
+{
+  "info": {
+    "name": "Bolsos-CAP API",
+    "description": "Colección oficial de la API de **Bolsos-CAP** (backend).\n\nIncluye los módulos:\n- **Usuarios** (`/api/users`) — registro local, login con Google, recuperación de contraseña y CRUD de perfil.\n- **Productos** (`/api/products`) — catálogo público; mutaciones solo-admin.\n- **Cotizaciones** (`/api/quotations`) — modelo de personalización (catálogo + personalizado), máquina de estados.\n\n## Variables\n\n- `baseUrl` → `http://localhost:3000` (cambiar en el environment si difiere).\n- `token` → JWT del **cliente** autenticado. Se setea automáticamente al ejecutar `Usuarios → Login con Google`.\n- `adminToken` → JWT de un usuario con `isAdmin: true`. Para las rutas admin debes pegarlo manualmente (o mintearlo con `JWT_SECRET`).\n- `productId` → se setea al ejecutar `Productos → Listar productos` o `Crear producto`.\n- `quotationId` → se setea al crear una cotización.\n\n## Flujo sugerido\n\n1. Login con Google (o pegar `token` manualmente).\n2. `Productos → Listar` para tomar un `productId`.\n3. `Cotizaciones → Crear cotización (catálogo)` como cliente.\n4. `Cotizaciones → Admin · Cotizar` (necesita `adminToken`) → `status: cotizada`.\n5. `Cotizaciones → Cliente · Responder` (aceptar) → `status: aceptada`.\n6. `Cotizaciones → Admin · Avanzar estado` → `en_produccion`, luego `completada`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "adminToken", "value": "", "type": "string" },
+    { "key": "productId", "value": "", "type": "string" },
+    { "key": "quotationId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Usuarios",
+      "description": "Registro local, login con Google, recuperación de contraseña y administración del perfil.",
+      "item": [
+        {
+          "name": "Registro local",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/users/register", "host": ["{{baseUrl}}"], "path": ["api", "users", "register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Ana\",\n  \"lastName\": \"Pérez\",\n  \"age\": 22,\n  \"email\": \"ana@ejemplo.com\",\n  \"password\": \"Aa1!segura\",\n  \"confirmPassword\": \"Aa1!segura\"\n}"
+            },
+            "description": "Registro local con email/contraseña.\n\n**Validaciones:**\n- `password` ≥ 8 caracteres, con 1 mayúscula, 1 minúscula, 1 número y 1 carácter especial.\n- `age` ≥ 13.\n- `password` y `confirmPassword` deben coincidir.\n\n**Respuestas:**\n- `201` `{ message: \"Registro exitoso\" }`\n- `400` validación / contraseñas no coinciden / campos faltantes\n- `409` `{ message: \"Email ya registrado\" }`\n\n> Nota: el login local **no** existe; este registro existe pero hoy sólo se loguea con Google."
+          },
+          "response": []
+        },
+        {
+          "name": "Login con Google",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "if (r && r.token) {",
+                  "  pm.collectionVariables.set('token', r.token);",
+                  "  console.log('token guardado en variable de colección');",
+                  "}",
+                  "pm.test('200', () => pm.response.code === 200);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/users/login", "host": ["{{baseUrl}}"], "path": ["api", "users", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idToken\": \"<pega-aquí-el-google-id-token>\"\n}"
+            },
+            "description": "Login con Google. Acepta el `idToken` (también lee `credential` o `token` como llave).\n\nSi el correo no existe en la BD, **crea** el usuario automáticamente.\n\n**Respuestas:**\n- `200` `{ message, token }` — el test guarda `token` en variable de colección.\n- `400` Token de Google requerido.\n- `401` Token inválido / cuenta no validable.\n- `403` Usuario desactivado."
+          },
+          "response": []
+        },
+        {
+          "name": "Solicitar recuperación de contraseña",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/users/recover-password", "host": ["{{baseUrl}}"], "path": ["api", "users", "recover-password"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ana@ejemplo.com\"\n}"
+            },
+            "description": "Envía un correo con un enlace de recuperación (token válido por 1 hora).\n\n**Requiere** `EMAIL_USER` y `EMAIL_PASS` configurados en `.env`.\n\n**Respuestas:**\n- `200` `{ message: \"Email de recuperar contraseña enviado\" }`\n- `400` Email requerido\n- `404` Usuario no encontrado"
+          },
+          "response": []
+        },
+        {
+          "name": "Restablecer contraseña",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/users/reset-password/<token>", "host": ["{{baseUrl}}"], "path": ["api", "users", "reset-password", "<token>"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"Nueva123!\",\n  \"confirmPassword\": \"Nueva123!\"\n}"
+            },
+            "description": "Cambia la contraseña usando el token recibido por correo.\n\n**Respuestas:**\n- `200` `{ message: \"Password has been reset successfully\" }`\n- `400` Token inválido/expirado · Contraseñas no coinciden · Validación.\n\nReemplaza `<token>` en la URL con el token real."
+          },
+          "response": []
+        },
+        {
+          "name": "🔒 Mi perfil",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/users/user-profile", "host": ["{{baseUrl}}"], "path": ["api", "users", "user-profile"] },
+            "description": "Devuelve el perfil del usuario autenticado: `{ firstName, lastName, age, email }`.\n\n**Respuestas:**\n- `200`\n- `401` Token faltante/inválido\n- `404` Usuario no encontrado"
+          },
+          "response": []
+        },
+        {
+          "name": "🔒 Actualizar perfil",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/users/update-profile", "host": ["{{baseUrl}}"], "path": ["api", "users", "update-profile"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Ana María\",\n  \"password\": \"Nueva123!\",\n  \"confirmPassword\": \"Nueva123!\"\n}"
+            },
+            "description": "Actualiza el perfil. Todos los campos son opcionales; si se envía `password` debe ir con `confirmPassword` (se re-hashea automáticamente).\n\n**Respuestas:**\n- `200` `{ message: \"Perfil exitosamente actualizado\" }`\n- `400` Validación o contraseñas no coinciden\n- `409` Email duplicado"
+          },
+          "response": []
+        },
+        {
+          "name": "🔒 Desactivar mi cuenta",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/users/deactivate", "host": ["{{baseUrl}}"], "path": ["api", "users", "deactivate"] },
+            "description": "Marca `isActive: false`. Tras esto, el login devolverá `403 Usuario desactivado`.\n\n**Respuesta:** `200 { message: \"Usuario desactivado\" }`"
+          },
+          "response": []
+        },
+        {
+          "name": "🔒 Eliminar mi cuenta",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/users/delete-user", "host": ["{{baseUrl}}"], "path": ["api", "users", "delete-user"] },
+            "description": "Borra al usuario autenticado.\n\n**Respuestas:**\n- `200` `{ message: \"Perfil exitosamente borrado\" }`\n- `404` Usuario no encontrado"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Productos (catálogo)",
+      "description": "Catálogo público de productos. Las mutaciones requieren `isAdmin: true` (variable `adminToken`).",
+      "item": [
+        {
+          "name": "Listar productos (público)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "if (Array.isArray(r) && r.length > 0 && r[0]._id) {",
+                  "  pm.collectionVariables.set('productId', r[0]._id);",
+                  "  console.log('productId guardado:', r[0]._id);",
+                  "}",
+                  "pm.test('200', () => pm.response.code === 200);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/products", "host": ["{{baseUrl}}"], "path": ["api", "products"] },
+            "description": "Lista pública del catálogo. **No requiere autenticación.**\n\nEl test guarda el `_id` del primer producto en la variable `productId`."
+          },
+          "response": []
+        },
+        {
+          "name": "Detalle de producto (público)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/products/{{productId}}", "host": ["{{baseUrl}}"], "path": ["api", "products", "{{productId}}"] },
+            "description": "**Respuestas:**\n- `200` Producto\n- `404` `{ error: \"Producto no encontrado\" }`"
+          },
+          "response": []
+        },
+        {
+          "name": "🔒👑 Crear producto",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "if (r && r._id) {",
+                  "  pm.collectionVariables.set('productId', r._id);",
+                  "  console.log('productId guardado:', r._id);",
+                  "}",
+                  "pm.test('201', () => pm.response.code === 201);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/products", "host": ["{{baseUrl}}"], "path": ["api", "products"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Bolso Andina\",\n  \"description\": \"Tejido en crochet 100% algodón\",\n  \"color\": \"Azul\",\n  \"dimensions\": \"30x20 cm\",\n  \"materials\": [\"Algodón\"],\n  \"type\": \"Bandolera\",\n  \"photo\": \"https://example.com/img.jpg\"\n}"
+            },
+            "description": "Crea un producto del catálogo. **Solo admin.**\n\n`code` se autogenera (`PRD-XXXXXX`) si no se envía.\n\n**Respuestas:**\n- `201` Producto creado (el test guarda `productId`)\n- `400` `{ error: \"...\" }` validación\n- `401` Token faltante · `403` No es admin"
+          },
+          "response": []
+        },
+        {
+          "name": "🔒👑 Actualizar producto",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/products/{{productId}}", "host": ["{{baseUrl}}"], "path": ["api", "products", "{{productId}}"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"color\": \"Rojo\",\n  \"description\": \"Versión rojo intenso\"\n}"
+            },
+            "description": "Actualización parcial. **Solo admin.**\n\n**Respuestas:**\n- `200` Producto actualizado\n- `400` validación\n- `404` `{ error: \"Producto no encontrado\" }`"
+          },
+          "response": []
+        },
+        {
+          "name": "🔒👑 Eliminar producto",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/products/{{productId}}", "host": ["{{baseUrl}}"], "path": ["api", "products", "{{productId}}"] },
+            "description": "Elimina un producto. **Solo admin.**\n\n**Respuestas:**\n- `200` `{ message: \"Producto eliminado\" }`\n- `404` `{ error: \"Producto no encontrado\" }`"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Cotizaciones",
+      "description": "Modelo de personalización. **Todas las rutas requieren login.**\n\nMáquina de estados:\n```\npendiente → cotizada_ia → en_revision → cotizada → aceptada → en_produccion → completada\n                                              └→ rechazada                  └→ cancelada\n```",
+      "item": [
+        {
+          "name": "🔒 Crear cotización (catálogo)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "if (r && r._id) {",
+                  "  pm.collectionVariables.set('quotationId', r._id);",
+                  "  console.log('quotationId guardado:', r._id);",
+                  "}",
+                  "pm.test('201', () => pm.response.code === 201);",
+                  "pm.test('status pendiente', () => r && r.status === 'pendiente');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/quotations", "host": ["{{baseUrl}}"], "path": ["api", "quotations"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"catalog\",\n  \"product\": \"{{productId}}\",\n  \"customization\": {\n    \"type\": \"Bandolera\",\n    \"color\": \"Azul\",\n    \"size\": \"30x20\"\n  },\n  \"quantity\": 1,\n  \"notes\": \"¿Posibilidad de asa más larga?\"\n}"
+            },
+            "description": "Crea una cotización sobre un **producto del catálogo** con opciones de personalización.\n\n**Validaciones:**\n- `kind: \"catalog\"`\n- `product` requerido (id de un Product)\n- `quantity` ≥ 1 (default 1)\n\n**Respuestas:**\n- `201` Quotation con `status: \"pendiente\"` (el test guarda `quotationId`)\n- `400` `{ message: \"Una cotización de catálogo requiere el producto\" }`\n- `401` Sin token"
+          },
+          "response": []
+        },
+        {
+          "name": "🔒 Crear cotización (personalizada)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/quotations", "host": ["{{baseUrl}}"], "path": ["api", "quotations"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"custom\",\n  \"customProduct\": {\n    \"description\": \"Bolso grande con asas largas\",\n    \"color\": \"Beige\",\n    \"dimensions\": \"40x30 cm\",\n    \"materials\": [\"Algodón\", \"Lino\"],\n    \"photo\": \"https://example.com/ref.jpg\"\n  },\n  \"quantity\": 1,\n  \"notes\": \"Lo necesito para junio\"\n}"
+            },
+            "description": "Cotización de un producto **personalizado** (fuera del catálogo).\n\n**Validaciones (kind=custom):**\n- `customProduct.description`, `color`, `dimensions` y `materials` (≥1 ítem) requeridos.\n- `photo` opcional (URL de referencia que aporta el cliente).\n\n**Respuestas:**\n- `201` Quotation\n- `400` `{ message: \"Una cotización personalizada requiere descripción, color, dimensiones y materiales\" }`"
+          },
+          "response": []
+        },
+        {
+          "name": "🔒 Mis cotizaciones",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/quotations/mine", "host": ["{{baseUrl}}"], "path": ["api", "quotations", "mine"] },
+            "description": "Cotizaciones del usuario autenticado, ordenadas por `createdAt` desc.\n\n**Respuesta `200`:** `[ Quotation, ... ]`"
+          },
+          "response": []
+        },
+        {
+          "name": "🔒 Detalle de cotización",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/api/quotations/{{quotationId}}", "host": ["{{baseUrl}}"], "path": ["api", "quotations", "{{quotationId}}"] },
+            "description": "Detalle. Sólo el **dueño** o un **admin** pueden ver.\n\n**Respuestas:**\n- `200` Quotation\n- `403` `{ message: \"No autorizado\" }`\n- `404` `{ message: \"Cotización no encontrada\" }`"
+          },
+          "response": []
+        },
+        {
+          "name": "🔒 Cliente · Aceptar/rechazar",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/quotations/{{quotationId}}/respond", "host": ["{{baseUrl}}"], "path": ["api", "quotations", "{{quotationId}}", "respond"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"aceptada\"\n}"
+            },
+            "description": "El cliente acepta o rechaza la cotización (`decision: \"aceptada\" | \"rechazada\"`).\n\n**Reglas:**\n- Sólo el dueño puede responder.\n- Sólo permitido cuando `status === \"cotizada\"`.\n\n**Respuestas:**\n- `200` Quotation con `status: \"aceptada\"` o `\"rechazada\"`\n- `400` decisión inválida\n- `403` No autorizado (no es el dueño)\n- `409` `{ message: \"Solo se puede responder una cotización en estado 'cotizada'\" }`"
+          },
+          "response": []
+        },
+        {
+          "name": "🔒👑 Admin · Listar todas",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/quotations?status=pendiente",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "quotations"],
+              "query": [
+                { "key": "status", "value": "pendiente", "description": "Opcional. Cualquier campo válido (kind, user, status...) sirve como filtro." }
+              ]
+            },
+            "description": "Lista todas las cotizaciones. **Solo admin.**\n\n**Filtros (query):** `status`, `kind`, etc. (filtro Mongo directo).\n\n**Respuestas:**\n- `200` `[ Quotation, ... ]`\n- `403` `{ message: \"Acceso permitido solo para administradoras\" }` si el usuario no es admin"
+          },
+          "response": []
+        },
+        {
+          "name": "🔒👑 Admin · Cotizar (fijar precio final)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/quotations/{{quotationId}}/quote", "host": ["{{baseUrl}}"], "path": ["api", "quotations", "{{quotationId}}", "quote"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 120000,\n  \"currency\": \"COP\",\n  \"notes\": \"Incluye envío en Cali\"\n}"
+            },
+            "description": "La administradora fija la **cotización final** y se la envía al cliente.\n\n**Efecto:**\n- Guarda `finalQuotation` con `quotedBy: <admin>`, `quotedAt: now`.\n- Cambia `status → \"cotizada\"`.\n\n**Respuestas:**\n- `200` Quotation actualizada\n- `400` `{ message: \"El monto de la cotización es requerido\" }`\n- `404` Cotización no encontrada"
+          },
+          "response": []
+        },
+        {
+          "name": "🔒👑 Admin · Propuesta IA (fase 4)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/quotations/{{quotationId}}/ai-quote", "host": ["{{baseUrl}}"], "path": ["api", "quotations", "{{quotationId}}", "ai-quote"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 100000,\n  \"currency\": \"COP\",\n  \"breakdown\": \"materiales 40k + 6 horas de trabajo a 10k/h\",\n  \"model\": \"gemini-1.5\"\n}"
+            },
+            "description": "Endpoint preparado para la **fase 4 (IA)**: actualmente sólo **almacena** la propuesta recibida (no hay llamada a Gemini todavía).\n\n**Efecto:**\n- Guarda `aiQuotation` con `generatedAt: now`.\n- Cambia `status → \"cotizada_ia\"`."
+          },
+          "response": []
+        },
+        {
+          "name": "🔒👑 Admin · Avanzar estado",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": { "raw": "{{baseUrl}}/api/quotations/{{quotationId}}/status", "host": ["{{baseUrl}}"], "path": ["api", "quotations", "{{quotationId}}", "status"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"en_produccion\"\n}"
+            },
+            "description": "Avanza el estado tras la aceptación / durante la producción.\n\n**Valores permitidos:** `en_revision`, `en_produccion`, `completada`, `cancelada`.\n\n> Las transiciones `cotizada`/`aceptada`/`rechazada` se manejan en `quote` y `respond`.\n\n**Respuestas:**\n- `200` Quotation actualizada\n- `400` Estado no permitido\n- `404` Cotización no encontrada"
+          },
+          "response": []
+        },
+        {
+          "name": "🔒👑 Admin · Eliminar cotización",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/quotations/{{quotationId}}", "host": ["{{baseUrl}}"], "path": ["api", "quotations", "{{quotationId}}"] },
+            "description": "Borra la cotización. **Solo admin.**\n\n**Respuestas:**\n- `200` `{ message: \"Item deleted successfully\" }`\n- `404` `{ message: \"Item not found\" }`"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
