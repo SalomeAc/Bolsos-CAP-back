@@ -7,11 +7,23 @@ class QuotationDAO extends GlobalDAO {
   }
 
   async findByUser(userId) {
-    return this.model.find({ user: userId }).sort({ createdAt: -1 });
+    return this.model
+      .find({ user: userId })
+      .sort({ createdAt: -1 })
+      .populate('product')
+      .populate('user', 'firstName lastName email');
   }
 
   async findByStatus(status) {
-    return this.model.find({ status }).sort({ createdAt: -1 });
+    return this.model
+      .find({ status })
+      .sort({ createdAt: -1 })
+      .populate('product')
+      .populate('user', 'firstName lastName email');
+  }
+
+  async read(id) {
+    return this.model.findById(id).populate('product').populate('user', 'firstName lastName email');
   }
 }
 
