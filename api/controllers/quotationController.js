@@ -74,10 +74,12 @@ class QuotationController extends GlobalController {
         return res.status(404).json({ message: "Cotización no encontrada" });
       }
 
-      const isOwner = quotation.user.toString() === req.user.id;
-      const admin = isOwner ? false : await this._isAdmin(req.user.id);
+      const quotationUserId = quotation.user?._id?.toString() || quotation.user?.toString() || quotation.user;
+      const currentUserId = req.user.id?.toString() || req.user.id;
+      const isOwner = quotationUserId === currentUserId;
+      const isAdmin = req.user.isAdmin === true;
 
-      if (!isOwner && !admin) {
+      if (!isOwner && !isAdmin) {
         return res.status(403).json({ message: "No autorizado" });
       }
 
@@ -172,7 +174,10 @@ class QuotationController extends GlobalController {
         return res.status(404).json({ message: "Cotización no encontrada" });
       }
 
-      if (quotation.user.toString() !== req.user.id) {
+      const quotationUserId = quotation.user?._id?.toString() || quotation.user?.toString() || quotation.user;
+      const currentUserId = req.user.id?.toString() || req.user.id;
+      
+      if (quotationUserId !== currentUserId) {
         return res.status(403).json({ message: "No autorizado" });
       }
 

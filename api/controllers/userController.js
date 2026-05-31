@@ -88,6 +88,7 @@ class UserController extends GlobalController {
           id: user._id,
           email: user.email,
           provider: user.authProvider,
+          isAdmin: user.isAdmin,
         },
         process.env.JWT_SECRET,
         { expiresIn: "1h" }

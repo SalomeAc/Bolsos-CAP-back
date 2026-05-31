@@ -11,7 +11,7 @@ class QuotationDAO extends GlobalDAO {
       .find({ user: userId })
       .sort({ createdAt: -1 })
       .populate('product')
-      .populate('user', 'firstName lastName email');
+      .populate('user', '_id firstName lastName email');
   }
 
   async findByStatus(status) {
@@ -19,11 +19,19 @@ class QuotationDAO extends GlobalDAO {
       .find({ status })
       .sort({ createdAt: -1 })
       .populate('product')
-      .populate('user', 'firstName lastName email');
+      .populate('user', '_id firstName lastName email');
   }
 
   async read(id) {
-    return this.model.findById(id).populate('product').populate('user', 'firstName lastName email');
+    return this.model.findById(id).populate('product').populate('user', '_id firstName lastName email');
+  }
+
+  async getAll(filter = {}) {
+    return this.model
+      .find(filter)
+      .sort({ createdAt: -1 })
+      .populate('product')
+      .populate('user', '_id firstName lastName email');
   }
 }
 

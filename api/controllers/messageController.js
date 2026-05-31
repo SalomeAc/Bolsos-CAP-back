@@ -21,8 +21,19 @@ class MessageController extends GlobalController {
       }
 
       // Validar que el usuario sea propietario de la cotización o administrador
-      const isOwner = quotation.user.toString() === req.user.id;
-      const isAdmin = req.user.isAdmin;
+      // Extraer el ID del usuario de la cotización (puede ser objeto o string)
+      const quotationUserId = quotation.user?._id?.toString() || quotation.user?.toString() || quotation.user;
+      const currentUserId = req.user.id?.toString() || req.user.id;
+      const isOwner = quotationUserId === currentUserId;
+      const isAdmin = req.user.isAdmin === true;
+
+      console.log("DEBUG createMessage:", {
+        quotationUserId,
+        currentUserId,
+        isOwner,
+        isAdmin,
+        quotationUserObj: quotation.user
+      });
 
       if (!isOwner && !isAdmin) {
         return res
@@ -72,8 +83,10 @@ class MessageController extends GlobalController {
       }
 
       // Validar que el usuario sea propietario de la cotización o administrador
-      const isOwner = quotation.user.toString() === req.user.id;
-      const isAdmin = req.user.isAdmin;
+      const quotationUserId = quotation.user?._id?.toString() || quotation.user?.toString() || quotation.user;
+      const currentUserId = req.user.id?.toString() || req.user.id;
+      const isOwner = quotationUserId === currentUserId;
+      const isAdmin = req.user.isAdmin === true;
 
       if (!isOwner && !isAdmin) {
         return res
@@ -106,15 +119,29 @@ class MessageController extends GlobalController {
       }
 
       // Validar que el usuario sea propietario de la cotización o administrador
-      const isOwner = quotation.user.toString() === req.user.id;
-      const isAdmin = req.user.isAdmin;
+      const quotationUserId = quotation.user?._id?.toString() || quotation.user?.toString() || quotation.user;
+      const currentUserId = req.user.id?.toString() || req.user.id;
+      const isOwner = quotationUserId === currentUserId;
+      const isAdmin = req.user.isAdmin === true;
+
+      console.log("\n========== DEBUG getLatestMessages ==========");
+      console.log("quotationId:", quotationId);
+      console.log("quotation.user objeto:", JSON.stringify(quotation.user, null, 2));
+      console.log("quotationUserId (extraído):", quotationUserId, "tipo:", typeof quotationUserId);
+      console.log("currentUserId (del JWT):", currentUserId, "tipo:", typeof currentUserId);
+      console.log("isOwner:", isOwner);
+      console.log("isAdmin:", isAdmin);
+      console.log("req.user completo:", JSON.stringify(req.user, null, 2));
+      console.log("===========================================\n");
 
       if (!isOwner && !isAdmin) {
+        console.log("❌ ACCESS DENIED");
         return res
           .status(403)
           .json({ message: "No tienes permiso para ver los mensajes de esta cotización" });
       }
 
+      console.log("✅ ACCESS GRANTED");
       const messages = await this.dao.findLatestByQuotation(
         quotationId,
         limit ? parseInt(limit) : 50
@@ -141,8 +168,10 @@ class MessageController extends GlobalController {
           .json({ message: "Mensaje no encontrado" });
       }
 
-      const isOwner = message.sender.toString() === req.user.id;
-      const isAdmin = req.user.isAdmin;
+      const senderId = message.sender?._id?.toString() || message.sender?.toString() || message.sender;
+      const currentUserId = req.user.id?.toString() || req.user.id;
+      const isOwner = senderId === currentUserId;
+      const isAdmin = req.user.isAdmin === true;
 
       if (!isOwner && !isAdmin) {
         return res
