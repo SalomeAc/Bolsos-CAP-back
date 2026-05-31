@@ -1,0 +1,35 @@
+# Dependencias
+node_modules/
+
+# Variables de entorno
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Cobertura de tests
+coverage/
+.nyc_output/
+
+# Builds / artefactos
+dist/
+build/
+tmp/
+
+# Cachés de herramientas
+.npm/
+.eslintcache
+
+# Editores / SO
+.DS_Store
+Thumbs.db
+*.swp
+
+# Subidas locales (imágenes de productos/cotizaciones servidas en local)
+uploads/
