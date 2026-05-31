@@ -9,6 +9,14 @@ router.get("/user-profile", authenticateToken, (req, res) =>
   UserController.getUserProfile(req, res),
 );
 
+// DEBUG: Ver qué hay en el JWT actual
+router.get("/debug-token", authenticateToken, (req, res) => {
+  res.json({ 
+    message: "Contenido del token JWT actual:",
+    user: req.user 
+  });
+});
+
 
 router.post("/login", (req, res) => UserController.loginUser(req, res));
 

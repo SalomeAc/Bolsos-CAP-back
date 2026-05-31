@@ -1,22 +1,18 @@
-const UserDAO = require("../dao/userDAO");
-
 // Debe usarse SIEMPRE después de authenticateToken (necesita req.user.id).
-// El JWT no incluye isAdmin, así que se consulta el usuario en la BD.
+// Usa el isAdmin del JWT que se genera en userController.js
 async function requireAdmin(req, res, next) {
   try {
     if (!req.user || !req.user.id) {
       return res.status(401).json({ message: "No autenticado" });
     }
 
-    const user = await UserDAO.read(req.user.id);
-
-    if (!user || !user.isAdmin) {
+    // El JWT ya contiene isAdmin, verificar directamente
+    if (req.user.isAdmin !== true) {
       return res
         .status(403)
         .json({ message: "Acceso permitido solo para administradores" });
     }
 
-    req.currentUser = user;
     next();
   } catch (err) {
     console.error("requireAdmin error:", err);
