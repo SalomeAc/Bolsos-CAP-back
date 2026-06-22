@@ -1,6 +1,7 @@
 const GlobalController = require("./globalController");
 const QuotationDAO = require("../dao/quotationDAO");
 const UserDAO = require("../dao/userDAO");
+const NotificationService = require("../services/notificationService");
 
 class QuotationController extends GlobalController {
   constructor() {
@@ -40,7 +41,17 @@ class QuotationController extends GlobalController {
       }
 
       const quotation = await this.dao.create(data);
-      return res.status(201).json(quotation);
+
+      // Poblar cotización con datos necesarios para la notificación
+      const populatedQuotation = await this.dao.read(quotation._id);
+
+      // Enviar notificación de confirmación (asíncrono, no bloquea)
+      this._sendNotificationAsync(populatedQuotation).catch(err => {
+        console.error("Error enviando notificación de cotización:", err);
+        // No romper el flujo - la cotización ya fue creada
+      });
+
+      return res.status(201).json(populatedQuotation);
     } catch (err) {
       if (err.name === "ValidationError") {
         const firstMessage = Object.values(err.errors)[0].message;
@@ -50,6 +61,21 @@ class QuotationController extends GlobalController {
       return res
         .status(400)
         .json({ message: err.message || "Error al crear la cotización" });
+    }
+  }
+
+  /**
+   * Envía notificación de confirmación de forma asíncrona
+   * @private
+   */
+  async _sendNotificationAsync(quotation) {
+    try {
+      await NotificationService.sendQuotationConfirmation(quotation);
+      console.log(`[QUOTATION] ✓ Notificación completada para cotización ${quotation._id}`);
+    } catch (err) {
+      console.error(`[QUOTATION] ⚠️ Error en notificación para cotización ${quotation._id}:`, err.message);
+      // No relanzar error - la cotización ya fue creada exitosamente
+      // El error ya está loguéado para seguimiento manual
     }
   }
 
