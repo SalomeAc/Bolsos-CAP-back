@@ -5,27 +5,47 @@ class NotificationService {
   /**
    * Genera y envía notificación de confirmación de cotización
    * @param {Object} quotation - Cotización poblada con user, product/customProduct
+   * @param {Object} [options]
+   * @param {boolean} [options.fromCotizarForm=false] - true si viene del formulario /cotizar
+   * @param {string} [options.observaciones] - texto del campo observaciones
+   * @param {string} [options.photoUrl] - URL de Cloudinary
    * @returns {Promise<Object>} Mensaje de notificación creado
    */
-  async sendQuotationConfirmation(quotation) {
+  async sendQuotationConfirmation(quotation, options = {}) {
     try {
-      // Validar datos requeridos
+      const { fromCotizarForm = false } = options;
+
       if (!quotation || !quotation.user || !quotation.user.email) {
         throw new Error("Cotización debe tener usuario con email");
       }
 
-      console.log(`[NOTIFICATION] Iniciando notificación para cotización ${quotation._id}`);
+      console.log(
+        `[NOTIFICATION] Iniciando notificación para cotización ${quotation._id}` +
+          (fromCotizarForm ? " (formulario Cotizar)" : "")
+      );
 
-      // Construir contenido según modalidad
       const content = this._buildNotificationContent(quotation);
-      const emailHtml = this._buildEmailTemplate(content);
 
-      // Crear mensaje del sistema en la plataforma
+      const messageContent = fromCotizarForm
+        ? this._buildCotizarFormSystemMessageContent(quotation, content, options)
+        : this._buildStandardSystemMessageContent(content);
+
+      const attachments = fromCotizarForm
+        ? this._resolveCotizarFormAttachments(quotation, options)
+        : [];
+
+      const emailHtml = fromCotizarForm
+        ? this._buildEmailTemplate(content, { ...options, fromCotizarForm: true })
+        : this._buildEmailTemplate(content);
+
       console.log(`[NOTIFICATION] Creando mensaje del sistema...`);
-      const systemMessage = await this._createSystemMessage(quotation, content);
+      const systemMessage = await this._createSystemMessage(
+        quotation,
+        messageContent,
+        attachments
+      );
       console.log(`[NOTIFICATION] Mensaje del sistema creado: ${systemMessage._id}`);
 
-      // Enviar email al usuario
       console.log(`[NOTIFICATION] Enviando email a ${quotation.user.email}...`);
       await this._sendEmail(quotation.user.email, emailHtml);
       console.log(`[NOTIFICATION] ✓ Email enviado exitosamente a ${quotation.user.email}`);
@@ -84,11 +104,114 @@ class NotificationService {
   }
 
   /**
+   * Mensaje del sistema estándar (catálogo y custom vía API JSON)
+   * @private
+   */
+  _buildStandardSystemMessageContent(content) {
+    const { bagType, bagName, material, dimensions, color, requestDate, status } =
+      content;
+
+    return [
+      "Cotización Registrada Correctamente",
+      "",
+      "Hemos recibido tu solicitud de cotización. Estos son los detalles:",
+      "",
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+      `Tipo de bolso: ${bagType}`,
+      `Nombre del bolso: ${bagName}`,
+      `Material: ${material}`,
+      `Dimensiones: ${dimensions}`,
+      `Color: ${color}`,
+      `Fecha de solicitud: ${requestDate}`,
+      `Estado actual: ${status}`,
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+      "",
+      "Pronto recibirás nuevas actualizaciones.",
+    ].join("\n");
+  }
+
+  /**
+   * Mensaje del sistema para cotizaciones desde /cotizar
+   * Incluye observaciones en content y la foto va en attachments
+   * @private
+   */
+  _buildCotizarFormSystemMessageContent(quotation, content, options = {}) {
+    const { bagType, bagName, material, dimensions, color, requestDate, status } =
+      content;
+
+    const observaciones =
+      options.observaciones?.trim() ||
+      quotation.notes?.trim() ||
+      "";
+
+    const lines = [
+      "Cotización Registrada Correctamente",
+      "",
+      "Hemos recibido tu solicitud de cotización. Estos son los detalles:",
+      "",
+      "━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+      `Material: ${material}`,
+      `Dimensiones: ${dimensions}`,
+      `Color: ${color}`,
+      `Fecha de solicitud: ${requestDate}`,
+      `Estado actual: ${status}`,
+    ];
+
+    if (observaciones) {
+      lines.push("");
+      lines.push("Observaciones:");
+      lines.push(observaciones);
+    }
+
+    lines.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    lines.push("");
+    lines.push("Pronto recibirás nuevas actualizaciones.");
+
+    return lines.join("\n");
+  }
+
+  /**
+   * Resuelve adjuntos para cotizaciones desde /cotizar
+   * @private
+   */
+  _resolveCotizarFormAttachments(quotation, options = {}) {
+    const photoUrl =
+      options.photoUrl ||
+      quotation.customProduct?.photo ||
+      null;
+
+    return photoUrl ? [photoUrl] : [];
+  }
+
+  /**
    * Construye mensaje HTML para el email
    * @private
    */
-  _buildEmailTemplate(content) {
-    const { bagType, bagName, material, dimensions, color, requestDate, status } = content;
+  _buildEmailTemplate(content, options = {}) {
+    const { bagType, bagName, material, dimensions, color, requestDate, status } =
+      content;
+
+    const fromCotizarForm = options.fromCotizarForm === true;
+    const observaciones = options.observaciones?.trim() || "";
+    const photoUrl = options.photoUrl || "";
+
+    const observacionesBlock =
+      fromCotizarForm && observaciones
+        ? `
+              <div class="info-item">
+                <span class="label">Observaciones:</span><br>
+                ${observaciones.replace(/\n/g, "<br>")}
+              </div>`
+        : "";
+
+    const photoBlock =
+      fromCotizarForm && photoUrl
+        ? `
+              <div class="info-item">
+                <span class="label">Foto de referencia:</span><br>
+                <a href="${photoUrl}" target="_blank">Ver imagen adjunta</a>
+              </div>`
+        : "";
 
     return `
       <!DOCTYPE html>
@@ -137,6 +260,8 @@ class NotificationService {
               <div class="info-item">
                 <span class="label">Estado actual:</span> <strong>${status}</strong>
               </div>
+              ${observacionesBlock}
+              ${photoBlock}
 
               <hr>
 
@@ -157,41 +282,18 @@ class NotificationService {
    * Crea mensaje del sistema en la plataforma
    * @private
    */
-  async _createSystemMessage(quotation, content) {
-    const { bagType, bagName, material, dimensions, color, requestDate, status } = content;
-
-    // Mensaje con saltos de línea (texto plano, no HTML)
-    const messageContent = [
-  "Cotización Registrada Correctamente",
-  "",
-  "Hemos recibido tu solicitud de cotización. Estos son los detalles:",
-  "",
-  "━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-  `Tipo de bolso: ${bagType}`,
-  `Nombre del bolso: ${bagName}`,
-  `Material: ${material}`,
-  `Dimensiones: ${dimensions}`,
-  `Color: ${color}`,
-  `Fecha de solicitud: ${requestDate}`,
-  `Estado actual: ${status}`,
-  "━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-  "",
-  "Pronto recibirás nuevas actualizaciones."
-].join("\n");
-
-    // Obtener admin para que sea el remitente del mensaje del sistema
+  async _createSystemMessage(quotation, messageContent, attachments = []) {
     const AdminUser = require("../models/user");
-    let adminUser = await AdminUser.findOne({ isAdmin: true }).lean();
+    const adminUser = await AdminUser.findOne({ isAdmin: true }).lean();
 
-    // Si no hay admin, usar un ID de sistema (puede ajustarse según necesidad)
     const senderId = adminUser?._id || quotation.user._id;
 
     const messageData = {
       quotation: quotation._id,
-      sender: senderId,  // Admin o sistema
+      sender: senderId,
       content: messageContent,
       isSystemMessage: true,
-      attachments: [],
+      attachments: attachments || [],
     };
 
     return await MessageDAO.create(messageData);

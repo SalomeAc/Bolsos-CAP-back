@@ -2,6 +2,7 @@ const GlobalController = require("./globalController");
 const QuotationDAO = require("../dao/quotationDAO");
 const UserDAO = require("../dao/userDAO");
 const NotificationService = require("../services/notificationService");
+const CloudinaryService = require("../services/cloudinaryService");
 
 class QuotationController extends GlobalController {
   constructor() {
@@ -64,18 +65,84 @@ class QuotationController extends GlobalController {
     }
   }
 
+  // --- Cliente: formulario de cotización personalizada (multipart + foto) ---
+  async createCustomQuotationFromForm(req, res) {
+    try {
+      const dimensions = req.body.dimensions?.trim();
+      const color = req.body.color?.trim();
+      const material = req.body.material?.trim();
+      const observaciones = req.body.observaciones?.trim() || "";
+
+      if (!dimensions || !color || !material) {
+        return res.status(400).json({
+          message: "Dimensiones, color y material son obligatorios",
+        });
+      }
+
+      let photoUrl = null;
+
+      if (req.file) {
+        const uploadResult = await CloudinaryService.uploadImageBuffer(
+          req.file.buffer
+        );
+        photoUrl = uploadResult.url;
+      }
+
+      const quotationData = {
+        kind: "custom",
+        user: req.user.id,
+        quantity: 1,
+        notes: observaciones || undefined,
+        status: "pendiente",
+        customProduct: {
+          description: `Bolso personalizado en ${material}`,
+          color,
+          dimensions,
+          materials: [material],
+          ...(photoUrl ? { photo: photoUrl } : {}),
+        },
+      };
+
+      const quotation = await this.dao.create(quotationData);
+      const populatedQuotation = await this.dao.read(quotation._id);
+
+      // La notificación crea el ÚNICO mensaje del chat (sistema)
+      this._sendNotificationAsync(populatedQuotation, {
+        fromCotizarForm: true,
+        observaciones,
+        photoUrl,
+      }).catch((err) => {
+        console.error("Error enviando notificación de cotización:", err);
+      });
+
+      return res.status(201).json(populatedQuotation);
+    } catch (err) {
+      if (err.name === "ValidationError") {
+        const firstMessage = Object.values(err.errors)[0].message;
+        return res.status(400).json({ message: firstMessage });
+      }
+
+      console.error("createCustomQuotationFromForm error:", err);
+      return res.status(400).json({
+        message: err.message || "Error al procesar la cotización",
+      });
+    }
+  }
+
   /**
    * Envía notificación de confirmación de forma asíncrona
    * @private
    */
-  async _sendNotificationAsync(quotation) {
+    /**
+   * Envía notificación de confirmación de forma asíncrona
+   * @private
+   */
+  async _sendNotificationAsync(quotation, options = {}) {
     try {
-      await NotificationService.sendQuotationConfirmation(quotation);
+      await NotificationService.sendQuotationConfirmation(quotation, options);
       console.log(`[QUOTATION] ✓ Notificación completada para cotización ${quotation._id}`);
     } catch (err) {
       console.error(`[QUOTATION] ⚠️ Error en notificación para cotización ${quotation._id}:`, err.message);
-      // No relanzar error - la cotización ya fue creada exitosamente
-      // El error ya está loguéado para seguimiento manual
     }
   }
 
