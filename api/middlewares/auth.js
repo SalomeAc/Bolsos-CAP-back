@@ -5,13 +5,6 @@ function authenticateToken(req, res, next) {
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1]; 
 
-  console.log("DEBUG auth middleware:", {
-    hasAuthHeader: !!authHeader,
-    hasToken: !!token,
-    jwtSecretExists: !!process.env.JWT_SECRET,
-    jwtSecretValue: process.env.JWT_SECRET
-  });
-
   if (!token) return res.status(401).json({ message: "Token missing" });
 
   jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
@@ -19,14 +12,18 @@ function authenticateToken(req, res, next) {
       console.error("JWT Verification Error:", {
         error: err.message,
         name: err.name,
-        expiredAt: err.expiredAt
+        expiredAt: err.expiredAt,
       });
+
+      if (err.name === "TokenExpiredError") {
+        return res.status(401).json({ message: "Token expired" });
+      }
+
       return res.status(403).json({ message: "Invalid token" });
     }
 
-    console.log("JWT Decoded successfully:", decoded);
     req.user = decoded;
-    next(); 
+    next();
   });
 }
 
