@@ -5,6 +5,11 @@ const { sendMail } = require("../../api/utils/mailer");
 // Mock de las dependencias
 jest.mock("../../api/dao/messageDAO");
 jest.mock("../../api/utils/mailer");
+jest.mock("../../api/models/user", () => ({
+  findOne: jest.fn().mockReturnValue({
+    lean: jest.fn().mockResolvedValue({ _id: "admin1", isAdmin: true }),
+  }),
+}));
 
 describe("NotificationService", () => {
   beforeEach(() => {
@@ -51,13 +56,13 @@ describe("NotificationService", () => {
 
       await NotificationService.sendQuotationConfirmation(mockQuotation);
 
-      // Verificar que se creó mensaje del sistema
+      // Verificar que se creó mensaje del sistema (remitente = admin del sistema)
       expect(MessageDAO.create).toHaveBeenCalledWith(
         expect.objectContaining({
           quotation: mockQuotation._id,
-          sender: mockQuotation.user._id,
+          sender: "admin1",
           isSystemMessage: true,
-          content: expect.stringContaining("Cotización registrada correctamente"),
+          content: expect.stringContaining("Cotización Registrada Correctamente"),
         })
       );
 
@@ -144,7 +149,7 @@ describe("NotificationService", () => {
 
       expect(MessageDAO.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          sender: mockQuotation.user._id,
+          sender: "admin1",
         })
       );
     });
