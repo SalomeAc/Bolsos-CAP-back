@@ -28,6 +28,9 @@ router.put("/:id/quote", requireAdmin, (req, res) =>
 router.put("/:id/status", requireAdmin, (req, res) =>
   QuotationController.updateStatus(req, res)
 );
+router.get("/:id/traceability", requireAdmin, (req, res) =>
+  QuotationController.getTraceability(req, res)
+);
 router.delete("/:id", requireAdmin, (req, res) =>
   QuotationController.delete(req, res)
 );
