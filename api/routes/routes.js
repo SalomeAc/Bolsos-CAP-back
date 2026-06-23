@@ -5,8 +5,9 @@ const router = express.Router();
 const productRoutes = require("./productRoutes");
 const quotationRoutes = require("./quotationRoutes");
 const messageRoutes = require("./messageRoutes");
+const speechRoutes = require("./speechRoutes");
 
-
+router.use("/speech", speechRoutes);
 router.use("/users", userRoutes);
 router.use("/products", productRoutes);
 router.use("/quotations", quotationRoutes);

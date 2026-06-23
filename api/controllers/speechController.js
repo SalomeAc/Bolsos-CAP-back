@@ -1,6 +1,16 @@
 // lógica de Azure Speech
 
 const sdk = require("microsoft-cognitiveservices-speech-sdk");
+const { issueSpeechToken } = require("../services/azureSpeechService");
+
+exports.getSpeechToken = async (_req, res) => {
+  try {
+    const payload = await issueSpeechToken();
+    res.json(payload);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
 
 exports.textToSpeech = async (req, res) => {
   try {
