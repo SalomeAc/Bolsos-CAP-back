@@ -228,7 +228,12 @@ class QuotationController extends GlobalController {
     try {
       const { status } = req.body;
       const allowed = [
+        "pendiente",
+        "cotizada_ia",
         "en_revision",
+        "cotizada",
+        "aceptada",
+        "rechazada",
         "en_produccion",
         "completada",
         "cancelada",
