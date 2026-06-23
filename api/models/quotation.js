@@ -16,6 +16,12 @@ const QuotationSchema = new mongoose.Schema(
       required: [true, "El usuario es requerido"],
     },
 
+    // Solicitud original asociada (trazabilidad HU2)
+    solicitud: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Solicitud",
+    },
+
     // --- Modalidad "catalog" ---
     product: {
       type: mongoose.Schema.Types.ObjectId,
@@ -104,6 +110,7 @@ QuotationSchema.pre("validate", async function () {
 
 QuotationSchema.index({ user: 1 });
 QuotationSchema.index({ status: 1 });
+QuotationSchema.index({ solicitud: 1 });
 QuotationSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model("Quotation", QuotationSchema);

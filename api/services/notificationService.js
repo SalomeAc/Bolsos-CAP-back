@@ -1,9 +1,10 @@
 const MessageDAO = require("../dao/messageDAO");
+const NotificationDAO = require("../dao/notificationDAO");
 const { sendMail } = require("../utils/mailer");
 
 class NotificationService {
   /**
-   * Genera y envía notificación de confirmación de cotización
+   * Genera y envía notificación de confirmación de cotización al cliente
    * @param {Object} quotation - Cotización poblada con user, product/customProduct
    * @param {Object} [options]
    * @param {boolean} [options.fromCotizarForm=false] - true si viene del formulario /cotizar
@@ -56,6 +57,111 @@ class NotificationService {
       console.error(`[NOTIFICATION ERROR] Error en sendQuotationConfirmation:`, err);
       throw err;
     }
+  }
+
+  /**
+   * Notifica a la administradora sobre una nueva solicitud de cotización
+   * @param {Object} quotation - Cotización poblada
+   * @param {Object} solicitud - Solicitud asociada (opcional)
+   * @returns {Promise<Array>} Notificaciones creadas para cada admin
+   */
+  async notifyAdminNewRequest(quotation, solicitud = null) {
+    try {
+      if (!quotation || !quotation._id) {
+        throw new Error("Cotización requerida para notificar al admin");
+      }
+
+      const AdminUser = require("../models/user");
+      const admins = await AdminUser.find({ isAdmin: true, isActive: true }).lean();
+
+      if (!admins.length) {
+        console.warn("[NOTIFICATION] No hay administradores activos para notificar");
+        return [];
+      }
+
+      const clientName = [
+        quotation.user?.firstName,
+        quotation.user?.lastName,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .trim() || "Cliente";
+
+      const productName =
+        quotation.kind === "catalog"
+          ? quotation.product?.name || "Producto de catálogo"
+          : quotation.customProduct?.description || "Bolso personalizado";
+
+      const solicitudCode = solicitud?.code || quotation.solicitud?.code;
+      const title = "Nueva solicitud de cotización";
+      const message = solicitudCode
+        ? `${clientName} envió la solicitud ${solicitudCode}: ${productName} (x${quotation.quantity || 1})`
+        : `${clientName} envió una nueva solicitud: ${productName} (x${quotation.quantity || 1})`;
+
+      const notifications = [];
+
+      for (const admin of admins) {
+        const notificationData = {
+          type: "nueva_solicitud",
+          title,
+          message,
+          quotation: quotation._id,
+          solicitud: solicitud?._id || quotation.solicitud?._id || quotation.solicitud,
+          recipient: admin._id,
+          read: false,
+          metadata: {
+            clientName,
+            clientEmail: quotation.user?.email,
+            productName,
+            kind: quotation.kind,
+            quantity: quotation.quantity || 1,
+            requestDate: quotation.createdAt || new Date(),
+          },
+        };
+
+        const notification = await NotificationDAO.create(notificationData);
+        notifications.push(notification);
+        console.log(
+          `[NOTIFICATION] ✓ Notificación admin creada para ${admin.email}: ${notification._id}`
+        );
+
+        if (admin.email) {
+          try {
+            await this._sendAdminEmail(admin.email, title, message, quotation, solicitudCode);
+          } catch (emailErr) {
+            console.error(
+              `[NOTIFICATION] Error enviando email admin a ${admin.email}:`,
+              emailErr.message
+            );
+          }
+        }
+      }
+
+      return notifications;
+    } catch (err) {
+      console.error(`[NOTIFICATION ERROR] Error en notifyAdminNewRequest:`, err);
+      throw err;
+    }
+  }
+
+  /**
+   * @private
+   */
+  async _sendAdminEmail(adminEmail, title, message, quotation, solicitudCode) {
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head><meta charset="UTF-8"></head>
+        <body style="font-family: Arial, sans-serif; color: #333;">
+          <h2>${title}</h2>
+          <p>${message}</p>
+          <p><strong>ID cotización:</strong> ${quotation._id}</p>
+          ${solicitudCode ? `<p><strong>Código solicitud:</strong> ${solicitudCode}</p>` : ""}
+          <p>Ingresa al panel de administración para atender esta solicitud.</p>
+        </body>
+      </html>
+    `;
+    await sendMail(adminEmail, title, html);
   }
 
   /**
@@ -132,12 +238,10 @@ class NotificationService {
 
   /**
    * Mensaje del sistema para cotizaciones desde /cotizar
-   * Incluye observaciones en content y la foto va en attachments
    * @private
    */
   _buildCotizarFormSystemMessageContent(quotation, content, options = {}) {
-    const { bagType, bagName, material, dimensions, color, requestDate, status } =
-      content;
+    const { material, dimensions, color, requestDate, status } = content;
 
     const observaciones =
       options.observaciones?.trim() ||
@@ -236,37 +340,18 @@ class NotificationService {
             </div>
             <div class="content">
               <p>Hemos recibido tu solicitud de cotización. Estos son los detalles de tu bolso:</p>
-
               <hr>
-
-              <div class="info-item">
-                <span class="label">Tipo de bolso:</span> ${bagType}
-              </div>
-              <div class="info-item">
-                <span class="label">Nombre del bolso:</span> ${bagName}
-              </div>
-              <div class="info-item">
-                <span class="label">Material:</span> ${material}
-              </div>
-              <div class="info-item">
-                <span class="label">Dimensiones:</span> ${dimensions}
-              </div>
-              <div class="info-item">
-                <span class="label">Color:</span> ${color}
-              </div>
-              <div class="info-item">
-                <span class="label">Fecha de solicitud:</span> ${requestDate}
-              </div>
-              <div class="info-item">
-                <span class="label">Estado actual:</span> <strong>${status}</strong>
-              </div>
+              <div class="info-item"><span class="label">Tipo de bolso:</span> ${bagType}</div>
+              <div class="info-item"><span class="label">Nombre del bolso:</span> ${bagName}</div>
+              <div class="info-item"><span class="label">Material:</span> ${material}</div>
+              <div class="info-item"><span class="label">Dimensiones:</span> ${dimensions}</div>
+              <div class="info-item"><span class="label">Color:</span> ${color}</div>
+              <div class="info-item"><span class="label">Fecha de solicitud:</span> ${requestDate}</div>
+              <div class="info-item"><span class="label">Estado actual:</span> <strong>${status}</strong></div>
               ${observacionesBlock}
               ${photoBlock}
-
               <hr>
-
               <p>Pronto recibirás nuevas actualizaciones sobre el estado de tu cotización.</p>
-
               <div class="footer">
                 <p>Este es un mensaje automático. Por favor, no respondas a este email.</p>
                 <p>Si tienes preguntas, ingresa a la plataforma para comunicarte con nuestro equipo.</p>
@@ -285,18 +370,15 @@ class NotificationService {
   async _createSystemMessage(quotation, messageContent, attachments = []) {
     const AdminUser = require("../models/user");
     const adminUser = await AdminUser.findOne({ isAdmin: true }).lean();
-
     const senderId = adminUser?._id || quotation.user._id;
 
-    const messageData = {
+    return await MessageDAO.create({
       quotation: quotation._id,
       sender: senderId,
       content: messageContent,
       isSystemMessage: true,
       attachments: attachments || [],
-    };
-
-    return await MessageDAO.create(messageData);
+    });
   }
 
   /**
@@ -304,19 +386,10 @@ class NotificationService {
    * @private
    */
   async _sendEmail(userEmail, htmlContent) {
-    try {
-      if (!userEmail) {
-        throw new Error("Email del usuario requerido");
-      }
-      await sendMail(
-        userEmail,
-        "Cotización Registrada Correctamente",
-        htmlContent
-      );
-    } catch (err) {
-      console.error(`[NOTIFICATION ERROR] Fallo al enviar email a ${userEmail}:`, err.message);
-      throw new Error(`Error enviando email: ${err.message}`);
+    if (!userEmail) {
+      throw new Error("Email del usuario requerido");
     }
+    await sendMail(userEmail, "Cotización Registrada Correctamente", htmlContent);
   }
 }
 
