@@ -13,8 +13,8 @@ exports.textToSpeech = async (req, res) => {
     }
 
     const speechConfig = sdk.SpeechConfig.fromSubscription(
-      process.env.SPEECH_KEY,
-      process.env.SPEECH_REGION
+      process.env.VITE_AZURE_KEY,
+      process.env.VITE_AZURE_REGION
     );
 
     // Voz femenina colombiana
