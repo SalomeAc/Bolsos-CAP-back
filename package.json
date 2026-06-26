@@ -22,12 +22,15 @@
   "homepage": "https://github.com/emilynunezordonez/Bolsos_CAP_Backend#readme",
   "dependencies": {
     "bcrypt": "^6.0.0",
+    "cloudinary": "^2.10.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "google-auth-library": "^10.6.2",
     "jsonwebtoken": "^9.0.3",
+    "microsoft-cognitiveservices-speech-sdk": "^1.50.0",
     "mongoose": "^9.6.2",
-    "nodemailer": "^8.0.9"
+    "multer": "^2.2.0",
+    "nodemailer": "^9.0.1"
   }
 }

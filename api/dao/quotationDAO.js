@@ -10,28 +10,36 @@ class QuotationDAO extends GlobalDAO {
     return this.model
       .find({ user: userId })
       .sort({ createdAt: -1 })
-      .populate('product')
-      .populate('user', '_id firstName lastName email');
+      .populate("product")
+      .populate("solicitud")
+      .populate("user", "_id firstName lastName email");
   }
 
   async findByStatus(status) {
     return this.model
       .find({ status })
       .sort({ createdAt: -1 })
-      .populate('product')
-      .populate('user', '_id firstName lastName email');
+      .populate("product")
+      .populate("solicitud")
+      .populate("user", "_id firstName lastName email");
   }
 
   async read(id) {
-    return this.model.findById(id).populate('product').populate('user', '_id firstName lastName email');
+    return this.model
+      .findById(id)
+      .populate("product")
+      .populate("solicitud")
+      .populate("user", "_id firstName lastName email")
+      .populate("finalQuotation.quotedBy", "_id firstName lastName email");
   }
 
   async getAll(filter = {}) {
     return this.model
       .find(filter)
       .sort({ createdAt: -1 })
-      .populate('product')
-      .populate('user', '_id firstName lastName email');
+      .populate("product")
+      .populate("solicitud")
+      .populate("user", "_id firstName lastName email");
   }
 }
 

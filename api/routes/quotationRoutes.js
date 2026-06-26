@@ -4,6 +4,7 @@ const router = express.Router();
 const authenticateToken = require("../middlewares/auth");
 const requireAdmin = require("../middlewares/requireAdmin");
 const QuotationController = require("../controllers/quotationController");
+const upload = require("../middlewares/upload");
 
 // Todas las rutas de cotizaciones requieren login.
 router.use(authenticateToken);
@@ -11,6 +12,9 @@ router.use(authenticateToken);
 // --- Cliente ---
 router.post("/", (req, res) => QuotationController.createQuotation(req, res));
 router.get("/mine", (req, res) => QuotationController.getMyQuotations(req, res));
+router.post("/custom-form", upload.single("photo"),
+  (req, res) => QuotationController.createCustomQuotationFromForm(req, res)
+);
 router.put("/:id/respond", (req, res) =>
   QuotationController.respondQuotation(req, res)
 );
@@ -27,6 +31,9 @@ router.put("/:id/quote", requireAdmin, (req, res) =>
 );
 router.put("/:id/status", requireAdmin, (req, res) =>
   QuotationController.updateStatus(req, res)
+);
+router.get("/:id/traceability", requireAdmin, (req, res) =>
+  QuotationController.getTraceability(req, res)
 );
 router.delete("/:id", requireAdmin, (req, res) =>
   QuotationController.delete(req, res)
