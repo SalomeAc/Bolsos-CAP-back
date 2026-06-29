@@ -28,6 +28,7 @@ const QuotationSchema = new mongoose.Schema(
       type: { type: String }, // tipo de bolso elegido
       color: { type: String },
       size: { type: String }, // "tamaño"
+      material: { type: String },
     },
 
     // --- Modalidad "custom" ---
