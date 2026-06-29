@@ -182,9 +182,7 @@ class NotificationService {
     if (quotation.kind === "catalog" && quotation.product) {
       bagType = quotation.product.type || "No especificado";
       bagName = quotation.product.name || "No especificado";
-      material = quotation.customization?.type
-        ? `${quotation.customization.type} - ${quotation.product.materials?.join(", ") || "No especificado"}`
-        : quotation.product.materials?.join(", ") || "No especificado";
+      material = quotation.customization?.material || "No especificado";
       dimensions = quotation.customization?.size || quotation.product.dimensions?.join(", ") || "No especificado";
       color = quotation.customization?.color || quotation.product.color?.join(", ") || "No especificado";
     } else if (quotation.kind === "custom" && quotation.customProduct) {

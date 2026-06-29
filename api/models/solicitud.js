@@ -27,6 +27,7 @@ const SolicitudSchema = new mongoose.Schema(
       type: { type: String },
       color: { type: String },
       size: { type: String },
+      material: { type: String },
     },
     customProduct: {
       description: { type: String },
