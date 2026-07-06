@@ -35,6 +35,7 @@ const SolicitudSchema = new mongoose.Schema(
       dimensions: { type: String },
       materials: { type: [String] },
       photo: { type: String },
+      descriptionImagen: { type: String, default: null },
     },
     quantity: {
       type: Number,
