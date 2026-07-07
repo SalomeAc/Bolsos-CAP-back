@@ -1,9 +1,11 @@
 const NotificationService = require("../../api/services/notificationService");
 const MessageDAO = require("../../api/dao/messageDAO");
+const NotificationDAO = require("../../api/dao/notificationDAO");
 const { sendMail } = require("../../api/utils/mailer");
 
 // Mock de las dependencias
 jest.mock("../../api/dao/messageDAO");
+jest.mock("../../api/dao/notificationDAO");
 jest.mock("../../api/utils/mailer");
 jest.mock("../../api/models/user", () => ({
   findOne: jest.fn().mockReturnValue({
@@ -62,8 +64,10 @@ describe("NotificationService", () => {
           quotation: mockQuotation._id,
           sender: "admin1",
           isSystemMessage: true,
-          content: expect.stringContaining("Cotización Registrada Correctamente"),
-        })
+          content: expect.stringContaining(
+            "Cotización Registrada Correctamente",
+          ),
+        }),
       );
 
       // Verificar que contiene datos del producto
@@ -112,7 +116,7 @@ describe("NotificationService", () => {
       expect(sendMail).toHaveBeenCalledWith(
         "maria@example.com",
         "Cotización Registrada Correctamente",
-        expect.stringContaining("Bolso Tote")
+        expect.stringContaining("Bolso Tote"),
       );
 
       const emailHtml = sendMail.mock.calls[0][2];
@@ -150,7 +154,7 @@ describe("NotificationService", () => {
       expect(MessageDAO.create).toHaveBeenCalledWith(
         expect.objectContaining({
           sender: "admin1",
-        })
+        }),
       );
     });
   });
@@ -202,7 +206,7 @@ describe("NotificationService", () => {
       };
 
       await expect(
-        NotificationService.sendQuotationConfirmation(invalidQuotation)
+        NotificationService.sendQuotationConfirmation(invalidQuotation),
       ).rejects.toThrow();
     });
 
@@ -218,7 +222,7 @@ describe("NotificationService", () => {
       };
 
       await expect(
-        NotificationService.sendQuotationConfirmation(invalidQuotation)
+        NotificationService.sendQuotationConfirmation(invalidQuotation),
       ).rejects.toThrow();
     });
 
@@ -237,7 +241,7 @@ describe("NotificationService", () => {
       sendMail.mockResolvedValue(true);
 
       await expect(
-        NotificationService.sendQuotationConfirmation(invalidQuotation)
+        NotificationService.sendQuotationConfirmation(invalidQuotation),
       ).rejects.toThrow();
     });
 
@@ -265,7 +269,7 @@ describe("NotificationService", () => {
       sendMail.mockRejectedValue(new Error("Error enviando email"));
 
       await expect(
-        NotificationService.sendQuotationConfirmation(mockQuotation)
+        NotificationService.sendQuotationConfirmation(mockQuotation),
       ).rejects.toThrow("Error enviando email");
     });
   });
@@ -309,6 +313,42 @@ describe("NotificationService", () => {
       expect(callArgs.content).toContain("Fecha de solicitud");
       expect(callArgs.content).toContain("Estado actual");
       expect(callArgs.content).toContain("Pendiente");
+    });
+  });
+
+  describe("Notificaciones de estado", () => {
+    it("debe crear una notificación para el cliente cuando cambia el estado", async () => {
+      const mockQuotation = {
+        _id: "quotation-status",
+        kind: "catalog",
+        user: {
+          _id: "user-status",
+          email: "cliente@example.com",
+        },
+        product: {
+          name: "Bolso Test",
+          type: "Test Type",
+        },
+        status: "pendiente",
+      };
+
+      NotificationDAO.create.mockResolvedValue({ _id: "notif-status" });
+      sendMail.mockResolvedValue(true);
+
+      await NotificationService.notifyClientStatusChanged(
+        mockQuotation,
+        "pendiente",
+        "en_revision",
+      );
+
+      expect(NotificationDAO.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "cambio_estado",
+          recipient: "user-status",
+          title: expect.stringContaining("estado"),
+          message: expect.stringContaining("en revisión"),
+        }),
+      );
     });
   });
 });

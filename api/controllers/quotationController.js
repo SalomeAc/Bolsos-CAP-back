@@ -19,7 +19,9 @@ class QuotationController extends GlobalController {
       if (!kind || !["catalog", "custom"].includes(kind)) {
         return res
           .status(400)
-          .json({ message: "El tipo de cotización debe ser 'catalog' o 'custom'" });
+          .json({
+            message: "El tipo de cotización debe ser 'catalog' o 'custom'",
+          });
       }
 
       const data = {
@@ -34,7 +36,9 @@ class QuotationController extends GlobalController {
         if (!product) {
           return res
             .status(400)
-            .json({ message: "Una cotización de catálogo requiere el producto" });
+            .json({
+              message: "Una cotización de catálogo requiere el producto",
+            });
         }
         data.product = product;
         data.customization = customization;
@@ -108,7 +112,7 @@ class QuotationController extends GlobalController {
 
       if (req.file) {
         const uploadResult = await CloudinaryService.uploadImageBuffer(
-          req.file.buffer
+          req.file.buffer,
         );
         photoUrl = uploadResult.url;
       }
@@ -179,15 +183,24 @@ class QuotationController extends GlobalController {
    * @param {Object} [context={}] - solicitud (HU2) y/o options del formulario /cotizar
    * @private
    */
-  async _sendNotificationAsync(quotation, { solicitud = null, options = {} } = {}) {
+  async _sendNotificationAsync(
+    quotation,
+    { solicitud = null, options = {} } = {},
+  ) {
     try {
       await NotificationService.sendQuotationConfirmation(quotation, options);
+      await NotificationService.notifyClientQuotationReceived(
+        quotation,
+        solicitud,
+      );
       await NotificationService.notifyAdminNewRequest(quotation, solicitud);
-      console.log(`[QUOTATION] ✓ Notificaciones completadas para cotización ${quotation._id}`);
+      console.log(
+        `[QUOTATION] ✓ Notificaciones completadas para cotización ${quotation._id}`,
+      );
     } catch (err) {
       console.error(
         `[QUOTATION] ⚠️ Error en notificaciones para cotización ${quotation._id}:`,
-        err.message
+        err.message,
       );
     }
   }
@@ -213,7 +226,10 @@ class QuotationController extends GlobalController {
         return res.status(404).json({ message: "Cotización no encontrada" });
       }
 
-      const quotationUserId = quotation.user?._id?.toString() || quotation.user?.toString() || quotation.user;
+      const quotationUserId =
+        quotation.user?._id?.toString() ||
+        quotation.user?.toString() ||
+        quotation.user;
       const currentUserId = req.user.id?.toString() || req.user.id;
       const isOwner = quotationUserId === currentUserId;
       const isAdmin = req.user.isAdmin === true;
@@ -303,7 +319,9 @@ class QuotationController extends GlobalController {
       console.error("setAiQuotation error:", err);
       return res
         .status(400)
-        .json({ message: err.message || "Error al guardar la propuesta de IA" });
+        .json({
+          message: err.message || "Error al guardar la propuesta de IA",
+        });
     }
   }
 
@@ -323,20 +341,26 @@ class QuotationController extends GlobalController {
         return res.status(404).json({ message: "Cotización no encontrada" });
       }
 
-      const quotationUserId = quotation.user?._id?.toString() || quotation.user?.toString() || quotation.user;
+      const quotationUserId =
+        quotation.user?._id?.toString() ||
+        quotation.user?.toString() ||
+        quotation.user;
       const currentUserId = req.user.id?.toString() || req.user.id;
-      
+
       if (quotationUserId !== currentUserId) {
         return res.status(403).json({ message: "No autorizado" });
       }
 
       if (quotation.status !== "cotizada") {
         return res.status(409).json({
-          message: "Solo se puede responder una cotización en estado 'cotizada'",
+          message:
+            "Solo se puede responder una cotización en estado 'cotizada'",
         });
       }
 
-      const updated = await this.dao.update(req.params.id, { status: decision });
+      const updated = await this.dao.update(req.params.id, {
+        status: decision,
+      });
       return res.status(200).json(updated);
     } catch (err) {
       console.error("respondQuotation error:", err);
@@ -373,8 +397,27 @@ class QuotationController extends GlobalController {
         return res.status(404).json({ message: "Cotización no encontrada" });
       }
 
+      const previousStatus = quotation.status;
       const updated = await this.dao.update(req.params.id, { status });
-      return res.status(200).json(updated);
+      const populatedQuotation = await this.dao.read(req.params.id);
+
+      if (previousStatus !== status) {
+        if (quotation.solicitud) {
+          const solicitudId =
+            quotation.solicitud?._id?.toString() ||
+            quotation.solicitud?.toString() ||
+            quotation.solicitud;
+          await SolicitudDAO.update(solicitudId, { status });
+        }
+
+        await NotificationService.notifyClientStatusChanged(
+          populatedQuotation,
+          previousStatus,
+          status,
+        );
+      }
+
+      return res.status(200).json(populatedQuotation);
     } catch (err) {
       console.error("updateStatus error:", err);
       return res
@@ -443,7 +486,8 @@ class QuotationController extends GlobalController {
       timeline.push({
         event: "solicitud_creada",
         date: solicitud.createdAt,
-        description: `Solicitud ${solicitud.code || ""} registrada por el cliente`.trim(),
+        description:
+          `Solicitud ${solicitud.code || ""} registrada por el cliente`.trim(),
       });
     } else if (quotation.createdAt) {
       timeline.push({
@@ -485,7 +529,9 @@ class QuotationController extends GlobalController {
       });
     }
 
-    if (["en_produccion", "completada", "cancelada"].includes(quotation.status)) {
+    if (
+      ["en_produccion", "completada", "cancelada"].includes(quotation.status)
+    ) {
       timeline.push({
         event: quotation.status,
         date: quotation.updatedAt,
