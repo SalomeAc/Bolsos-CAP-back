@@ -2,6 +2,7 @@ const QuotationController = require("../../api/controllers/quotationController")
 const QuotationDAO = require("../../api/dao/quotationDAO");
 const SolicitudDAO = require("../../api/dao/solicitudDAO");
 const NotificationService = require("../../api/services/notificationService");
+const ProductVariantService = require("../../api/services/productVariantService");
 const { sendMail } = require("../../api/utils/mailer");
 const MessageDAO = require("../../api/dao/messageDAO");
 
@@ -9,6 +10,7 @@ const MessageDAO = require("../../api/dao/messageDAO");
 jest.mock("../../api/dao/quotationDAO");
 jest.mock("../../api/dao/solicitudDAO");
 jest.mock("../../api/services/notificationService");
+jest.mock("../../api/services/productVariantService");
 jest.mock("../../api/utils/mailer");
 jest.mock("../../api/dao/messageDAO");
 
@@ -26,6 +28,8 @@ describe("QuotationController - Integración con Notificaciones", () => {
       code: "SOL-123456",
     });
     NotificationService.notifyAdminNewRequest.mockResolvedValue([{}]);
+    NotificationService.notifyClientQuotationReceived.mockResolvedValue({});
+    ProductVariantService.findVariantForQuotation.mockResolvedValue(null);
   });
 
   describe("createQuotation - Envío de Notificación", () => {

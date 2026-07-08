@@ -372,17 +372,19 @@ class NotificationService {
           .filter(Boolean)
           .join(" ")
           .trim() || "Cliente";
-      const productName =
-        quotation.kind === "catalog"
-          ? quotation.product?.name || "tu producto"
-          : "tu bolso";
+      const productName = this._getClientProductLabel(quotation);
       const amountText = this._formatCurrency(
         quotation.finalQuotation.amount,
         quotation.finalQuotation.currency || "COP",
       );
       const title = "Tu cotización está lista";
       const message = `La cotización de ${productName} es ${amountText}.`;
-      const chatMessage = message;
+      const clientChatMessage = `${message} ¿La aceptas?`;
+      const adminProductName =
+        quotation.kind === "catalog"
+          ? quotation.product?.name || "producto de catálogo"
+          : quotation.customProduct?.description || "bolso personalizado";
+      const adminChatMessage = `${clientName} ha recibido la cotización de ${adminProductName} por ${amountText}.`;
 
       const notification = await NotificationDAO.create({
         type: "cotizacion_enviada",
@@ -403,7 +405,20 @@ class NotificationService {
         },
       });
 
-      await this._createSystemMessage(quotation, chatMessage, [], "all");
+      await this._createSystemMessage(
+        quotation,
+        clientChatMessage,
+        [],
+        "client",
+        { messageType: "quotation_offer" },
+      );
+
+      await this._createSystemMessage(
+        quotation,
+        adminChatMessage,
+        [],
+        "admin",
+      );
 
       if (quotation.user?.email) {
         const html = `
@@ -598,6 +613,71 @@ class NotificationService {
   }
 
   /**
+   * Registra en el chat la respuesta del cliente (aceptar/rechazar).
+   * @param {Object} quotation - Cotización poblada
+   * @param {"aceptada"|"rechazada"|"propuesta"} decision
+   * @returns {Promise<Object|null>}
+   */
+  async notifyClientResponseInChat(quotation, decision) {
+    try {
+      if (!quotation?._id) {
+        return null;
+      }
+
+      const clientName =
+        [quotation.user?.firstName, quotation.user?.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim() || "El cliente";
+      const productName = this._getClientProductLabel(quotation);
+      const amountText = this._formatCurrency(
+        quotation.finalQuotation?.amount,
+        quotation.finalQuotation?.currency || "COP",
+      );
+
+      if (decision === "aceptada") {
+        const thankYouMessage = `¡Gracias por tu pedido! Confirmamos la aceptación de ${productName} por ${amountText}. Te contactaremos pronto con los siguientes pasos.`;
+        await this._createSystemMessage(quotation, thankYouMessage, [], "client");
+
+        const adminMessage = `${clientName} ha aceptado el pedido de ${productName} por ${amountText}.`;
+        return await this._createSystemMessage(
+          quotation,
+          adminMessage,
+          [],
+          "admin",
+        );
+      }
+
+      if (decision === "rechazada") {
+        const clientMessage = `Hemos registrado tu respuesta sobre ${productName}. Si deseas una nueva cotización, puedes escribirnos aquí.`;
+        await this._createSystemMessage(quotation, clientMessage, [], "client");
+
+        const adminMessage = `${clientName} rechazó el pedido de ${productName}.`;
+        return await this._createSystemMessage(
+          quotation,
+          adminMessage,
+          [],
+          "admin",
+        );
+      }
+
+      const proposed = this._formatCurrency(
+        quotation.clientResponse?.proposedAmount,
+        quotation.clientResponse?.currency || "COP",
+      );
+      const chatMessage = `${clientName} propuso un nuevo precio de ${proposed} para ${productName}.`;
+
+      return await this._createSystemMessage(quotation, chatMessage, [], "all");
+    } catch (err) {
+      console.error(
+        `[NOTIFICATION ERROR] Error en notifyClientResponseInChat:`,
+        err,
+      );
+      throw err;
+    }
+  }
+
+  /**
    * Envía correo de confirmación al cliente cuando acepta la cotización.
    * @param {Object} quotation - Cotización poblada
    * @returns {Promise<void>}
@@ -641,6 +721,14 @@ class NotificationService {
       "Confirmación de pedido aceptado",
       html,
     );
+  }
+
+  _getClientProductLabel(quotation) {
+    if (quotation?.kind === "catalog") {
+      return quotation.product?.name || "tu producto";
+    }
+
+    return "tu bolso personalizado";
   }
 
   _getStatusLabel(status) {
@@ -905,19 +993,26 @@ class NotificationService {
     messageContent,
     attachments = [],
     audience = "all",
+    options = {},
   ) {
     const AdminUser = require("../models/user");
     const adminUser = await AdminUser.findOne({ isAdmin: true }).lean();
     const senderId = adminUser?._id || quotation.user._id;
 
-    return await MessageDAO.create({
+    const payload = {
       quotation: quotation._id,
       sender: senderId,
       content: messageContent,
       isSystemMessage: true,
       audience,
       attachments: attachments || [],
-    });
+    };
+
+    if (options.messageType) {
+      payload.messageType = options.messageType;
+    }
+
+    return await MessageDAO.create(payload);
   }
 
   /**

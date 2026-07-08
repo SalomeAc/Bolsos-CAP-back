@@ -36,11 +36,17 @@ const MessageSchema = new mongoose.Schema(
       default: false,
     },
 
-    // all = visible para cliente y admin; admin = solo administradores (p. ej. propuesta IA)
+    // all = visible para cliente y admin; admin = solo administradores; client = solo cliente
     audience: {
       type: String,
-      enum: ["all", "admin"],
+      enum: ["all", "admin", "client"],
       default: "all",
+    },
+
+    // Tipo de mensaje del sistema (p. ej. oferta de cotización con acciones en el chat)
+    messageType: {
+      type: String,
+      enum: ["quotation_offer"],
     },
   },
   { timestamps: true }

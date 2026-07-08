@@ -6,9 +6,11 @@ class MessageDAO extends GlobalDAO {
     super(Message);
   }
 
-  _clientMessageFilter(includeAdminOnly) {
-    if (includeAdminOnly) {
-      return {};
+  _messageAudienceFilter({ isAdmin = false } = {}) {
+    if (isAdmin) {
+      return {
+        audience: { $ne: "client" },
+      };
     }
 
     return {
@@ -20,10 +22,10 @@ class MessageDAO extends GlobalDAO {
   }
 
   // Obtener todos los mensajes de una cotización ordenados por fecha
-  async findByQuotation(quotationId, { includeAdminOnly = true } = {}) {
+  async findByQuotation(quotationId, { isAdmin = false } = {}) {
     const filter = {
       quotation: quotationId,
-      ...this._clientMessageFilter(includeAdminOnly),
+      ...this._messageAudienceFilter({ isAdmin }),
     };
 
     return await this.model
@@ -34,10 +36,10 @@ class MessageDAO extends GlobalDAO {
   }
 
   // Obtener los últimos N mensajes de una cotización
-  async findLatestByQuotation(quotationId, limit = 50, { includeAdminOnly = true } = {}) {
+  async findLatestByQuotation(quotationId, limit = 50, { isAdmin = false } = {}) {
     const filter = {
       quotation: quotationId,
-      ...this._clientMessageFilter(includeAdminOnly),
+      ...this._messageAudienceFilter({ isAdmin }),
     };
 
     return await this.model

@@ -4,6 +4,7 @@ const SolicitudDAO = require("../dao/solicitudDAO");
 const UserDAO = require("../dao/userDAO");
 const NotificationService = require("../services/notificationService");
 const CloudinaryService = require("../services/cloudinaryService");
+const ProductVariantService = require("../services/productVariantService");
 const jwt = require("jsonwebtoken");
 const aiLog = require("../utils/aiWorkflowLogger");
 
@@ -82,6 +83,14 @@ class QuotationController extends GlobalController {
       // Vincular cotización en la solicitud (integridad bidireccional)
       await SolicitudDAO.update(solicitud._id, { quotation: quotation._id });
 
+      let autoQuotedCatalog = false;
+      if (kind === "catalog") {
+        autoQuotedCatalog = await this._applyCatalogAutoQuotation(
+          quotation._id,
+          solicitud._id,
+        );
+      }
+
       aiLog.info("CREATE", "Cotización creada, disparando flujo IA", {
         quotationId: quotation._id?.toString?.() || quotation._id,
         solicitudId: solicitud._id?.toString?.() || solicitud._id,
@@ -109,6 +118,7 @@ class QuotationController extends GlobalController {
       // Enviar notificaciones (asíncrono, no bloquea)
       this._sendNotificationAsync(populatedQuotation, {
         solicitud: populatedSolicitud,
+        options: { autoQuotedCatalog },
       }).catch((err) => {
         console.error("Error enviando notificaciones de cotización:", err);
       });
@@ -240,12 +250,17 @@ class QuotationController extends GlobalController {
     { solicitud = null, options = {} } = {},
   ) {
     try {
-      await NotificationService.sendQuotationConfirmation(quotation, options);
-      await NotificationService.notifyClientQuotationReceived(
-        quotation,
-        solicitud,
-      );
-      await NotificationService.notifyAdminNewRequest(quotation, solicitud);
+      if (options.autoQuotedCatalog) {
+        await NotificationService.notifyClientQuotationSent(quotation);
+        await NotificationService.notifyAdminNewRequest(quotation, solicitud);
+      } else {
+        await NotificationService.sendQuotationConfirmation(quotation, options);
+        await NotificationService.notifyClientQuotationReceived(
+          quotation,
+          solicitud,
+        );
+        await NotificationService.notifyAdminNewRequest(quotation, solicitud);
+      }
       console.log(
         `[QUOTATION] ✓ Notificaciones completadas para cotización ${quotation._id}`,
       );
@@ -292,6 +307,207 @@ class QuotationController extends GlobalController {
 
   _sanitizeQuotationsForClient(quotations) {
     return quotations.map((q) => this._sanitizeQuotationForClient(q));
+  }
+
+  /**
+   * Convierte subdocumentos Mongoose a objeto plano.
+   * @private
+   */
+  _toPlainSubdoc(subdoc) {
+    if (!subdoc) return {};
+    if (typeof subdoc.toObject === "function") {
+      return subdoc.toObject();
+    }
+    return { ...subdoc };
+  }
+
+  /**
+   * Normaliza campos que n8n puede enviar con nombres distintos.
+   * @private
+   */
+  _normalizeAiPayload(body = {}, existing = {}) {
+    const amountRaw =
+      body.amount ??
+      body.precio_sugerido ??
+      body.precioSugerido ??
+      body.aiQuotation?.amount ??
+      body.aiQuotation?.precio_sugerido ??
+      existing.amount ??
+      existing.precio_sugerido;
+
+    const parsedAmount =
+      amountRaw != null && amountRaw !== "" ? Number(amountRaw) : null;
+
+    const breakdown =
+      body.breakdown ??
+      body.justificacion ??
+      body.justificación ??
+      body.aiQuotation?.breakdown ??
+      existing.breakdown;
+
+    return {
+      amount: Number.isFinite(parsedAmount) ? parsedAmount : null,
+      currency:
+        body.currency ||
+        body.aiQuotation?.currency ||
+        existing.currency ||
+        "COP",
+      breakdown: breakdown || undefined,
+      model: body.model || body.aiQuotation?.model || existing.model,
+      confianza:
+        body.confianza || body.aiQuotation?.confianza || existing.confianza,
+      referenciasUsadas:
+        body.referenciasUsadas ||
+        body.aiQuotation?.referenciasUsadas ||
+        existing.referenciasUsadas,
+      ajusteDimensionalPromedio:
+        body.ajusteDimensionalPromedio ??
+        body.aiQuotation?.ajusteDimensionalPromedio ??
+        existing.ajusteDimensionalPromedio,
+      coeficientesAplicados:
+        body.coeficientesAplicados ||
+        body.aiQuotation?.coeficientesAplicados ||
+        existing.coeficientesAplicados,
+      generatedAt: existing.generatedAt || new Date(),
+      adminNotifiedAt: existing.adminNotifiedAt,
+    };
+  }
+
+  /**
+   * Construye el objeto aiQuotation listo para persistir.
+   * @private
+   */
+  _buildAiQuotationUpdate(body = {}, existing = {}) {
+    const plainExisting = this._toPlainSubdoc(existing);
+    const normalized = this._normalizeAiPayload(body, plainExisting);
+    if (normalized.amount == null) {
+      return null;
+    }
+
+    return {
+      ...plainExisting,
+      ...normalized,
+      generatedAt: plainExisting.generatedAt || normalized.generatedAt,
+    };
+  }
+
+  /**
+   * Corrige cotizaciones IA mal guardadas por n8n (p. ej. monto en finalQuotation).
+   * @private
+   */
+  async _repairMisplacedAiQuotation(quotation) {
+    if (!quotation?._id) {
+      return quotation;
+    }
+
+    const ai = this._toPlainSubdoc(quotation.aiQuotation);
+    const finalQuote = this._toPlainSubdoc(quotation.finalQuotation);
+    const quotationId = quotation._id?.toString?.() || quotation._id;
+
+    if (
+      quotation.status === "cotizada_ia" &&
+      ai.amount == null &&
+      finalQuote.amount != null
+    ) {
+      aiLog.warn(
+        "REPAIR",
+        "n8n guardó el monto en finalQuotation; moviendo a aiQuotation",
+        { quotationId, amount: finalQuote.amount },
+      );
+
+      await this.dao.update(quotationId, {
+        aiQuotation: {
+          amount: Number(finalQuote.amount),
+          currency: finalQuote.currency || "COP",
+          breakdown: finalQuote.notes,
+          generatedAt: new Date(),
+        },
+        status: "cotizada_ia",
+      });
+      await this.dao.unset(quotationId, { finalQuotation: "" });
+      return this.dao.read(quotationId);
+    }
+
+    const repaired = this._buildAiQuotationUpdate(
+      { precio_sugerido: ai.precio_sugerido, ...ai },
+      ai,
+    );
+    if (repaired && ai.amount == null && repaired.amount != null) {
+      await this.dao.update(quotationId, {
+        aiQuotation: repaired,
+        status: "cotizada_ia",
+      });
+      return this.dao.read(quotationId);
+    }
+
+    return quotation;
+  }
+
+  /**
+   * Persiste la propuesta IA recibida desde n8n (Mongo directo o callback).
+   * @private
+   */
+  async _persistAiQuotationFromPayload(quotationId, body = {}) {
+    const quotation = await this.dao.read(quotationId);
+    if (!quotation) {
+      return null;
+    }
+
+    const aiQuotation = this._buildAiQuotationUpdate(
+      body,
+      quotation.aiQuotation,
+    );
+    if (!aiQuotation) {
+      return quotation;
+    }
+
+    await this.dao.update(quotationId, {
+      aiQuotation,
+      status: "cotizada_ia",
+    });
+
+    return this.dao.read(quotationId);
+  }
+
+  /**
+   * Cotización automática de catálogo usando ProductVariant.
+   * @private
+   */
+  async _applyCatalogAutoQuotation(quotationId, solicitudId) {
+    const quotation = await this.dao.read(quotationId);
+    if (!quotation || quotation.kind !== "catalog") {
+      return false;
+    }
+
+    const productId = quotation.product?._id || quotation.product;
+    const variant = await ProductVariantService.findVariantForQuotation(
+      productId,
+      {
+        color: quotation.customization?.color,
+        material: quotation.customization?.material,
+        dimensions: quotation.customization?.size,
+      },
+    );
+
+    if (!variant || !(variant.precio_total > 0)) {
+      return false;
+    }
+
+    const quantity = quotation.quantity || 1;
+    const amount = variant.precio_total * quantity;
+
+    await this.dao.update(quotationId, {
+      finalQuotation: {
+        amount,
+        currency: "COP",
+        notes: "Cotización automática de catálogo",
+        quotedAt: new Date(),
+      },
+      status: "cotizada",
+    });
+
+    await SolicitudDAO.update(solicitudId, { status: "cotizada" });
+    return true;
   }
 
   _describeAiWorkflowResult(kind, aiResult) {
@@ -647,34 +863,68 @@ class QuotationController extends GlobalController {
     try {
       const { amount, currency, notes } = req.body;
 
-      if (amount == null) {
-        return res
-          .status(400)
-          .json({ message: "El monto de la cotización es requerido" });
-      }
-
       const quotation = await this.dao.read(req.params.id);
       if (!quotation) {
         return res.status(404).json({ message: "Cotización no encontrada" });
       }
 
-      const updated = await this.dao.update(req.params.id, {
+      const repaired = await this._repairMisplacedAiQuotation(quotation);
+      const resolvedAmountRaw =
+        amount != null && amount !== ""
+          ? Number(amount)
+          : repaired.aiQuotation?.amount != null
+            ? Number(repaired.aiQuotation.amount)
+            : repaired.finalQuotation?.amount != null
+              ? Number(repaired.finalQuotation.amount)
+              : null;
+
+      if (
+        resolvedAmountRaw == null ||
+        !Number.isFinite(resolvedAmountRaw) ||
+        resolvedAmountRaw <= 0
+      ) {
+        return res.status(400).json({
+          message:
+            "El monto de la cotización es requerido. Acepta la propuesta IA o indica un valor.",
+        });
+      }
+
+      const allowedStatuses = [
+        "pendiente",
+        "cotizada_ia",
+        "en_revision",
+        "cotizada",
+      ];
+      if (!allowedStatuses.includes(repaired.status)) {
+        return res.status(409).json({
+          message: `No se puede enviar la cotización desde el estado '${repaired.status}'`,
+        });
+      }
+
+      const resolvedCurrency =
+        currency ||
+        repaired.aiQuotation?.currency ||
+        repaired.finalQuotation?.currency ||
+        "COP";
+
+      await this.dao.update(req.params.id, {
         finalQuotation: {
-          amount,
-          currency: currency || "COP",
+          amount: resolvedAmountRaw,
+          currency: resolvedCurrency,
           notes,
           quotedBy: req.user.id,
           quotedAt: new Date(),
         },
         status: "cotizada",
       });
+      await this.dao.unset(req.params.id, { clientResponse: "" });
 
       // HU2: actualizar estado de la solicitud asociada
-      if (quotation.solicitud) {
+      if (repaired.solicitud) {
         const solicitudId =
-          quotation.solicitud?._id?.toString() ||
-          quotation.solicitud?.toString() ||
-          quotation.solicitud;
+          repaired.solicitud?._id?.toString() ||
+          repaired.solicitud?.toString() ||
+          repaired.solicitud;
         await SolicitudDAO.update(solicitudId, { status: "cotizada" });
       }
 
@@ -701,21 +951,21 @@ class QuotationController extends GlobalController {
   // --- Admin: guardar propuesta de IA (fase 4: por ahora almacena lo recibido) ---
   async setAiQuotation(req, res) {
     try {
-      const { amount, currency, breakdown, model } = req.body;
-
       const quotation = await this.dao.read(req.params.id);
       if (!quotation) {
         return res.status(404).json({ message: "Cotización no encontrada" });
       }
 
-      const updated = await this.dao.update(req.params.id, {
-        aiQuotation: {
-          amount,
-          currency: currency || "COP",
-          breakdown,
-          model,
-          generatedAt: new Date(),
-        },
+      const aiQuotation = this._buildAiQuotationUpdate(req.body, quotation.aiQuotation);
+      if (!aiQuotation) {
+        return res.status(400).json({
+          message:
+            "El monto de la propuesta IA es requerido (amount o precio_sugerido)",
+        });
+      }
+
+      await this.dao.update(req.params.id, {
+        aiQuotation,
         status: "cotizada_ia",
       });
 
@@ -766,6 +1016,17 @@ class QuotationController extends GlobalController {
         });
       }
 
+      if (
+        decision === "aceptada" &&
+        (quotation.finalQuotation?.amount == null ||
+          !(quotation.finalQuotation.amount > 0))
+      ) {
+        return res.status(409).json({
+          message:
+            "Esta cotización aún no tiene un precio final. Espera a que la administradora te envíe la cotización.",
+        });
+      }
+
       if (decision === "propuesta") {
         if (proposedAmount == null || Number.isNaN(Number(proposedAmount))) {
           return res.status(400).json({
@@ -792,6 +1053,10 @@ class QuotationController extends GlobalController {
           currency: currency || "COP",
           notes,
         });
+        await NotificationService.notifyClientResponseInChat(
+          populatedQuotation,
+          decision,
+        );
 
         return res.status(200).json(this._sanitizeQuotationForClient(populatedQuotation));
       }
@@ -811,6 +1076,14 @@ class QuotationController extends GlobalController {
       if (decision === "aceptada") {
         await NotificationService.sendAcceptanceEmailToClient(populatedQuotation);
       }
+
+      await NotificationService.notifyAdminClientResponse(populatedQuotation, {
+        decision,
+      });
+      await NotificationService.notifyClientResponseInChat(
+        populatedQuotation,
+        decision,
+      );
 
       await NotificationService.notifyClientStatusChanged(
         populatedQuotation,
@@ -1015,6 +1288,13 @@ class QuotationController extends GlobalController {
     try {
       const items = await this.dao.getAll(req.query);
 
+      for (let index = 0; index < items.length; index += 1) {
+        const repaired = await this._repairMisplacedAiQuotation(items[index]);
+        if (repaired) {
+          items[index] = repaired;
+        }
+      }
+
       items
         .filter(
           (quotation) =>
@@ -1083,11 +1363,22 @@ class QuotationController extends GlobalController {
         return res.status(404).json({ message: "Cotización no encontrada" });
       }
 
-      aiLog.logQuotationState("CALLBACK-BEFORE-NOTIFY", quotation);
+      let current = await this._repairMisplacedAiQuotation(quotation);
+      if (req.body && Object.keys(req.body).length > 0) {
+        current =
+          (await this._persistAiQuotationFromPayload(quotationId, req.body)) ||
+          current;
+      }
 
-      const notified = await this._ensureAdminAiNotification(quotation);
+      aiLog.logQuotationState("CALLBACK-BEFORE-NOTIFY", current);
+
+      const notified = await this._ensureAdminAiNotification(current);
 
       const populated = await this.dao.read(quotationId);
+      if (!populated) {
+        return res.status(404).json({ message: "Cotización no encontrada" });
+      }
+
       aiLog.logQuotationState("CALLBACK-AFTER-NOTIFY", populated, {
         adminNotificationSent: notified === true,
       });
@@ -1147,11 +1438,8 @@ class QuotationController extends GlobalController {
     const populated = await this.dao.read(quotation._id);
     await NotificationService.notifyAdminAiQuotationReady(populated);
 
-    await this.dao.update(quotation._id, {
-      aiQuotation: {
-        ...populated.aiQuotation,
-        adminNotifiedAt: new Date(),
-      },
+    await this.dao.patch(quotation._id, {
+      "aiQuotation.adminNotifiedAt": new Date(),
     });
 
     aiLog.info("NOTIFY", "Administradora notificada sobre propuesta IA", {

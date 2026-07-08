@@ -95,7 +95,7 @@ class MessageController extends GlobalController {
       }
 
       const messages = await this.dao.findByQuotation(quotationId, {
-        includeAdminOnly: isAdmin,
+        isAdmin,
       });
       return res.status(200).json(messages);
     } catch (err) {
@@ -147,7 +147,7 @@ class MessageController extends GlobalController {
       const messages = await this.dao.findLatestByQuotation(
         quotationId,
         limit ? parseInt(limit) : 50,
-        { includeAdminOnly: isAdmin },
+        { isAdmin },
       );
       // Revertir para que los más recientes estén al final
       return res.status(200).json(messages.reverse());
