@@ -22,13 +22,17 @@ class NotificationService {
 
       console.log(
         `[NOTIFICATION] Iniciando notificación para cotización ${quotation._id}` +
-          (fromCotizarForm ? " (formulario Cotizar)" : "")
+          (fromCotizarForm ? " (formulario Cotizar)" : ""),
       );
 
       const content = this._buildNotificationContent(quotation);
 
       const messageContent = fromCotizarForm
-        ? this._buildCotizarFormSystemMessageContent(quotation, content, options)
+        ? this._buildCotizarFormSystemMessageContent(
+            quotation,
+            content,
+            options,
+          )
         : this._buildStandardSystemMessageContent(content);
 
       const attachments = fromCotizarForm
@@ -36,25 +40,37 @@ class NotificationService {
         : [];
 
       const emailHtml = fromCotizarForm
-        ? this._buildEmailTemplate(content, { ...options, fromCotizarForm: true })
+        ? this._buildEmailTemplate(content, {
+            ...options,
+            fromCotizarForm: true,
+          })
         : this._buildEmailTemplate(content);
 
       console.log(`[NOTIFICATION] Creando mensaje del sistema...`);
       const systemMessage = await this._createSystemMessage(
         quotation,
         messageContent,
-        attachments
+        attachments,
       );
-      console.log(`[NOTIFICATION] Mensaje del sistema creado: ${systemMessage._id}`);
+      console.log(
+        `[NOTIFICATION] Mensaje del sistema creado: ${systemMessage._id}`,
+      );
 
       console.log(`[NOTIFICATION] Enviando email a ${quotation.user.email}...`);
       await this._sendEmail(quotation.user.email, emailHtml);
-      console.log(`[NOTIFICATION] ✓ Email enviado exitosamente a ${quotation.user.email}`);
+      console.log(
+        `[NOTIFICATION] ✓ Email enviado exitosamente a ${quotation.user.email}`,
+      );
 
-      console.log(`[NOTIFICATION] ✓ Notificación completada para cotización ${quotation._id}`);
+      console.log(
+        `[NOTIFICATION] ✓ Notificación completada para cotización ${quotation._id}`,
+      );
       return systemMessage;
     } catch (err) {
-      console.error(`[NOTIFICATION ERROR] Error en sendQuotationConfirmation:`, err);
+      console.error(
+        `[NOTIFICATION ERROR] Error en sendQuotationConfirmation:`,
+        err,
+      );
       throw err;
     }
   }
@@ -72,20 +88,23 @@ class NotificationService {
       }
 
       const AdminUser = require("../models/user");
-      const admins = await AdminUser.find({ isAdmin: true, isActive: true }).lean();
+      const admins = await AdminUser.find({
+        isAdmin: true,
+        isActive: true,
+      }).lean();
 
       if (!admins.length) {
-        console.warn("[NOTIFICATION] No hay administradores activos para notificar");
+        console.warn(
+          "[NOTIFICATION] No hay administradores activos para notificar",
+        );
         return [];
       }
 
-      const clientName = [
-        quotation.user?.firstName,
-        quotation.user?.lastName,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .trim() || "Cliente";
+      const clientName =
+        [quotation.user?.firstName, quotation.user?.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim() || "Cliente";
 
       const productName =
         quotation.kind === "catalog"
@@ -106,7 +125,8 @@ class NotificationService {
           title,
           message,
           quotation: quotation._id,
-          solicitud: solicitud?._id || quotation.solicitud?._id || quotation.solicitud,
+          solicitud:
+            solicitud?._id || quotation.solicitud?._id || quotation.solicitud,
           recipient: admin._id,
           read: false,
           metadata: {
@@ -122,16 +142,22 @@ class NotificationService {
         const notification = await NotificationDAO.create(notificationData);
         notifications.push(notification);
         console.log(
-          `[NOTIFICATION] ✓ Notificación admin creada para ${admin.email}: ${notification._id}`
+          `[NOTIFICATION] ✓ Notificación admin creada para ${admin.email}: ${notification._id}`,
         );
 
         if (admin.email) {
           try {
-            await this._sendAdminEmail(admin.email, title, message, quotation, solicitudCode);
+            await this._sendAdminEmail(
+              admin.email,
+              title,
+              message,
+              quotation,
+              solicitudCode,
+            );
           } catch (emailErr) {
             console.error(
               `[NOTIFICATION] Error enviando email admin a ${admin.email}:`,
-              emailErr.message
+              emailErr.message,
             );
           }
         }
@@ -139,9 +165,152 @@ class NotificationService {
 
       return notifications;
     } catch (err) {
-      console.error(`[NOTIFICATION ERROR] Error en notifyAdminNewRequest:`, err);
+      console.error(
+        `[NOTIFICATION ERROR] Error en notifyAdminNewRequest:`,
+        err,
+      );
       throw err;
     }
+  }
+
+  /**
+   * Crea una notificación para el cliente cuando la solicitud fue recibida
+   * @param {Object} quotation - Cotización poblada
+   * @param {Object} solicitud - Solicitud asociada (opcional)
+   * @returns {Promise<Object|null>} Notificación creada o null si no aplica
+   */
+  async notifyClientQuotationReceived(quotation, solicitud = null) {
+    try {
+      if (!quotation || !quotation._id) {
+        throw new Error("Cotización requerida para notificar al cliente");
+      }
+
+      const recipientId = quotation.user?._id || quotation.user;
+      if (!recipientId) {
+        console.warn(
+          "[NOTIFICATION] No se encontró usuario para notificar recepción",
+        );
+        return null;
+      }
+
+      const clientName =
+        [quotation.user?.firstName, quotation.user?.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim() || "Cliente";
+      const productName =
+        quotation.kind === "catalog"
+          ? quotation.product?.name || "producto de catálogo"
+          : quotation.customProduct?.description || "bolso personalizado";
+      const solicitudCode = solicitud?.code || quotation.solicitud?.code;
+      const title = "Solicitud de cotización recibida";
+      const message = solicitudCode
+        ? `${clientName}, hemos recibido tu solicitud ${solicitudCode} para ${productName}.`
+        : `${clientName}, hemos recibido tu solicitud de cotización para ${productName}.`;
+
+      const notification = await NotificationDAO.create({
+        type: "confirmacion_cotizacion",
+        title,
+        message,
+        quotation: quotation._id,
+        solicitud:
+          solicitud?._id || quotation.solicitud?._id || quotation.solicitud,
+        recipient: recipientId,
+        read: false,
+        metadata: {
+          clientName,
+          productName,
+          kind: quotation.kind,
+          quantity: quotation.quantity || 1,
+          requestDate: quotation.createdAt || new Date(),
+        },
+      });
+
+      console.log(
+        `[NOTIFICATION] ✓ Notificación cliente creada: ${notification._id}`,
+      );
+      return notification;
+    } catch (err) {
+      console.error(
+        `[NOTIFICATION ERROR] Error en notifyClientQuotationReceived:`,
+        err,
+      );
+      throw err;
+    }
+  }
+
+  /**
+   * Crea una notificación para el cliente cuando cambia el estado del pedido
+   * @param {Object} quotation - Cotización poblada
+   * @param {string} previousStatus - Estado anterior
+   * @param {string} nextStatus - Nuevo estado
+   * @returns {Promise<Object|null>} Notificación creada o null si no aplica
+   */
+  async notifyClientStatusChanged(quotation, previousStatus, nextStatus) {
+    try {
+      if (!quotation || !quotation._id) {
+        throw new Error("Cotización requerida para notificar cambio de estado");
+      }
+
+      const recipientId = quotation.user?._id || quotation.user;
+      const productName =
+        quotation.kind === "catalog"
+          ? quotation.product?.name || "tu producto"
+          : quotation.customProduct?.description || "tu bolso personalizado";
+      if (!recipientId) {
+        console.warn(
+          "[NOTIFICATION] No se encontró usuario para notificar cambio de estado",
+        );
+        return null;
+      }
+
+      const title = "Actualización del estado de tu pedido";
+      const previousLabel = this._getStatusLabel(previousStatus);
+      const nextLabel = this._getStatusLabel(nextStatus);
+      const message = `El estado de tu solicitud de "${productName}" cambió de ${previousLabel} a ${nextLabel}.`;
+
+      const notification = await NotificationDAO.create({
+        type: "cambio_estado",
+        title,
+        message,
+        quotation: quotation._id,
+        solicitud: quotation.solicitud?._id || quotation.solicitud,
+        recipient: recipientId,
+        read: false,
+        metadata: {
+          previousStatus,
+          nextStatus,
+          requestDate: quotation.updatedAt || new Date(),
+        },
+      });
+
+      console.log(
+        `[NOTIFICATION] ✓ Notificación de estado creada: ${notification._id}`,
+      );
+      return notification;
+    } catch (err) {
+      console.error(
+        `[NOTIFICATION ERROR] Error en notifyClientStatusChanged:`,
+        err,
+      );
+      throw err;
+    }
+  }
+
+  _getStatusLabel(status) {
+    const labels = {
+      pendiente: "pendiente",
+      cotizada_ia: "cotizada (IA)",
+      en_revision: "en revisión",
+      cotizada: "cotizada",
+      aceptada: "aceptada",
+      rechazada: "rechazada",
+      en_produccion: "en producción",
+      completada: "completada",
+      cancelada: "cancelada",
+    };
+
+    return labels[status] || status || "sin estado";
   }
 
   /**
@@ -169,29 +338,38 @@ class NotificationService {
    * @private
    */
   _buildNotificationContent(quotation) {
-    const requestDate = new Date(quotation.createdAt).toLocaleDateString("es-CO", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    const requestDate = new Date(quotation.createdAt).toLocaleDateString(
+      "es-CO",
+      {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      },
+    );
 
     let bagType, bagName, material, dimensions, color;
 
     if (quotation.kind === "catalog" && quotation.product) {
       bagType = quotation.product.type || "No especificado";
       bagName = quotation.product.name || "No especificado";
-      material = quotation.customization?.type
-        ? `${quotation.customization.type} - ${quotation.product.materials?.join(", ") || "No especificado"}`
-        : quotation.product.materials?.join(", ") || "No especificado";
-      dimensions = quotation.customization?.size || quotation.product.dimensions?.join(", ") || "No especificado";
-      color = quotation.customization?.color || quotation.product.color?.join(", ") || "No especificado";
+      material = quotation.customization?.material || "No especificado";
+      dimensions =
+        quotation.customization?.size ||
+        quotation.product.dimensions?.join(", ") ||
+        "No especificado";
+      color =
+        quotation.customization?.color ||
+        quotation.product.color?.join(", ") ||
+        "No especificado";
     } else if (quotation.kind === "custom" && quotation.customProduct) {
       const cp = quotation.customProduct;
       bagType = "Personalizado";
       bagName = cp.description || "Sin nombre";
-      material = Array.isArray(cp.materials) ? cp.materials.join(", ") : cp.materials || "No especificado";
+      material = Array.isArray(cp.materials)
+        ? cp.materials.join(", ")
+        : cp.materials || "No especificado";
       dimensions = cp.dimensions || "No especificado";
       color = cp.color || "No especificado";
     } else {
@@ -214,8 +392,15 @@ class NotificationService {
    * @private
    */
   _buildStandardSystemMessageContent(content) {
-    const { bagType, bagName, material, dimensions, color, requestDate, status } =
-      content;
+    const {
+      bagType,
+      bagName,
+      material,
+      dimensions,
+      color,
+      requestDate,
+      status,
+    } = content;
 
     return [
       "Cotización Registrada Correctamente",
@@ -244,9 +429,7 @@ class NotificationService {
     const { material, dimensions, color, requestDate, status } = content;
 
     const observaciones =
-      options.observaciones?.trim() ||
-      quotation.notes?.trim() ||
-      "";
+      options.observaciones?.trim() || quotation.notes?.trim() || "";
 
     const lines = [
       "Cotización Registrada Correctamente",
@@ -279,10 +462,7 @@ class NotificationService {
    * @private
    */
   _resolveCotizarFormAttachments(quotation, options = {}) {
-    const photoUrl =
-      options.photoUrl ||
-      quotation.customProduct?.photo ||
-      null;
+    const photoUrl = options.photoUrl || quotation.customProduct?.photo || null;
 
     return photoUrl ? [photoUrl] : [];
   }
@@ -292,8 +472,15 @@ class NotificationService {
    * @private
    */
   _buildEmailTemplate(content, options = {}) {
-    const { bagType, bagName, material, dimensions, color, requestDate, status } =
-      content;
+    const {
+      bagType,
+      bagName,
+      material,
+      dimensions,
+      color,
+      requestDate,
+      status,
+    } = content;
 
     const fromCotizarForm = options.fromCotizarForm === true;
     const observaciones = options.observaciones?.trim() || "";
@@ -389,7 +576,11 @@ class NotificationService {
     if (!userEmail) {
       throw new Error("Email del usuario requerido");
     }
-    await sendMail(userEmail, "Cotización Registrada Correctamente", htmlContent);
+    await sendMail(
+      userEmail,
+      "Cotización Registrada Correctamente",
+      htmlContent,
+    );
   }
 }
 

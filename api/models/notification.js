@@ -4,7 +4,7 @@ const NotificationSchema = new mongoose.Schema(
   {
     type: {
       type: String,
-      enum: ["nueva_solicitud"],
+      enum: ["nueva_solicitud", "confirmacion_cotizacion", "cambio_estado"],
       required: [true, "El tipo de notificación es requerido"],
     },
     title: {
@@ -42,7 +42,7 @@ const NotificationSchema = new mongoose.Schema(
       requestDate: { type: Date },
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 NotificationSchema.index({ recipient: 1, read: 1, createdAt: -1 });
