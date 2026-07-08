@@ -7,7 +7,9 @@
     "start": "node index.js",
     "dev": "node index.js",
     "test": "jest --runInBand",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "migrate:variant-prices": "node scripts/migrate-product-variant-prices.js",
+    "backfill:catalog-quotes": "node scripts/backfill-catalog-auto-quote.js"
   },
   "repository": {
     "type": "git",

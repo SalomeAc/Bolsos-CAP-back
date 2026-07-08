@@ -29,7 +29,7 @@ describe("QuotationController catalog auto quote", () => {
 
   it("aplica cotización automática cuando existe variante con precio", async () => {
     ProductVariantService.findVariantForQuotation.mockResolvedValue({
-      precio_total: 120000,
+      totalPrice: 120000,
     });
 
     QuotationDAO.read = jest
@@ -55,12 +55,12 @@ describe("QuotationController catalog auto quote", () => {
     QuotationDAO.update = jest.fn().mockResolvedValue({});
     SolicitudDAO.update = jest.fn().mockResolvedValue({});
 
-    const applied = await QuotationController._applyCatalogAutoQuotation(
+    const result = await QuotationController._applyCatalogAutoQuotation(
       "q1",
       "s1",
     );
 
-    expect(applied).toBe(true);
+    expect(result.applied).toBe(true);
     expect(QuotationDAO.update).toHaveBeenCalledWith(
       "q1",
       expect.objectContaining({
@@ -73,9 +73,9 @@ describe("QuotationController catalog auto quote", () => {
     });
   });
 
-  it("no aplica cotización automática si precio_total es 0", async () => {
+  it("no aplica cotización automática si totalPrice es 0", async () => {
     ProductVariantService.findVariantForQuotation.mockResolvedValue({
-      precio_total: 0,
+      totalPrice: 0,
     });
 
     QuotationDAO.read = jest.fn().mockResolvedValue({
@@ -86,12 +86,32 @@ describe("QuotationController catalog auto quote", () => {
     });
     QuotationDAO.update = jest.fn();
 
-    const applied = await QuotationController._applyCatalogAutoQuotation(
+    const result = await QuotationController._applyCatalogAutoQuotation(
       "q1",
       "s1",
     );
 
-    expect(applied).toBe(false);
+    expect(result.applied).toBe(false);
+    expect(result.reason).toBe("zero_price");
+    expect(QuotationDAO.update).not.toHaveBeenCalled();
+  });
+
+  it("no aplica cotización automática si falta material", async () => {
+    QuotationDAO.read = jest.fn().mockResolvedValue({
+      _id: "q1",
+      kind: "catalog",
+      product: "p1",
+      customization: { color: "Negro", size: "26 x 22 x 8" },
+    });
+    QuotationDAO.update = jest.fn();
+
+    const result = await QuotationController._applyCatalogAutoQuotation(
+      "q1",
+      "s1",
+    );
+
+    expect(result.applied).toBe(false);
+    expect(result.reason).toBe("missing_specs");
     expect(QuotationDAO.update).not.toHaveBeenCalled();
   });
 

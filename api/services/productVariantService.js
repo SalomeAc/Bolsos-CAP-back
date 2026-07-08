@@ -30,9 +30,8 @@ function normalizeDimensions(value) {
     .trim()
     .toLowerCase()
     .replace(/\s*cm\s*$/i, "")
-    .replace(/\s*x\s*/gi, "x")
-    .replace(/\s+/g, " ")
-    .trim();
+    .replace(/\s*[xX×]\s*/g, "x")
+    .replace(/\s+/g, "");
 }
 
 function normalizeToken(value) {
@@ -48,6 +47,19 @@ function variantKey(color, material, dimensions) {
   ].join("|");
 }
 
+function resolveTotalPrice(doc) {
+  return doc.totalPrice ?? doc.precio_total ?? doc.price ?? 0;
+}
+
+function resolveMaterialPrice(doc) {
+  return doc.materialPrice ?? doc.precio_material ?? 0;
+}
+
+function resolveWorkHours(doc) {
+  const value = doc.workHours ?? doc.horas_trabajo;
+  return value != null && value !== "" ? Number(value) : 6;
+}
+
 function toPublicVariant(doc) {
   if (!doc) return doc;
   return {
@@ -56,9 +68,9 @@ function toPublicVariant(doc) {
     color: doc.color,
     material: doc.material,
     dimensions: doc.dimensions,
-    precio_total: doc.precio_total ?? 0,
-    precio_material: doc.precio_material ?? 0,
-    horas_trabajo: doc.horas_trabajo ?? 0,
+    totalPrice: resolveTotalPrice(doc),
+    materialPrice: resolveMaterialPrice(doc),
+    workHours: resolveWorkHours(doc),
     sku: doc.sku || "",
     stock: doc.stock ?? 0,
   };
@@ -103,9 +115,9 @@ class ProductVariantService {
           color,
           material,
           dimensions,
-          precio_total: 0,
-          precio_material: 0,
-          horas_trabajo: 0,
+          totalPrice: 0,
+          materialPrice: 0,
+          workHours: 6,
           stock: 0,
           sku: buildSku(product.code, color, material, dimensions),
           embeddingDesactualizado: true,
@@ -145,30 +157,33 @@ class ProductVariantService {
     const updated = [];
 
     for (const item of variants) {
-      const precio_total = Number(item.precio_total ?? 0);
-      const precio_material = Number(item.precio_material ?? 0);
-      const horas_trabajo = Number(item.horas_trabajo ?? 0);
+      const totalPrice = Number(
+        item.totalPrice ?? item.precio_total ?? item.price ?? 0,
+      );
+      const materialPrice = Number(
+        item.materialPrice ?? item.precio_material ?? 0,
+      );
+      const workHours = Number(
+        item.workHours ?? item.horas_trabajo ?? 6,
+      );
 
       if (
-        Number.isNaN(precio_total) ||
-        Number.isNaN(precio_material) ||
-        Number.isNaN(horas_trabajo)
+        Number.isNaN(totalPrice) ||
+        Number.isNaN(materialPrice) ||
+        Number.isNaN(workHours)
       ) {
         throw new Error("Los valores numéricos de la variante no son válidos");
       }
 
-      if (precio_total < 0 || precio_material < 0 || horas_trabajo < 0) {
+      if (totalPrice < 0 || materialPrice < 0 || workHours < 0) {
         throw new Error("Los precios y horas no pueden ser negativos");
       }
 
       let doc = null;
+      const variantUpdate = { totalPrice, materialPrice, workHours };
 
       if (item._id) {
-        doc = await ProductVariantDAO.updateById(item._id, {
-          precio_total,
-          precio_material,
-          horas_trabajo,
-        });
+        doc = await ProductVariantDAO.updatePricing(item._id, variantUpdate);
       } else if (item.color && item.material && item.dimensions) {
         const existing = await ProductVariantDAO.findByProductAndSpecs(
           productId,
@@ -180,11 +195,7 @@ class ProductVariantService {
         );
 
         if (existing) {
-          doc = await ProductVariantDAO.updateById(existing._id, {
-            precio_total,
-            precio_material,
-            horas_trabajo,
-          });
+          doc = await ProductVariantDAO.updatePricing(existing._id, variantUpdate);
         }
       }
 
@@ -230,3 +241,5 @@ module.exports = new ProductVariantService();
 module.exports.normalizeDimensions = normalizeDimensions;
 module.exports.variantKey = variantKey;
 module.exports.buildSku = buildSku;
+module.exports.resolveTotalPrice = resolveTotalPrice;
+module.exports.resolveWorkHours = resolveWorkHours;

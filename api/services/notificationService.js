@@ -250,6 +250,10 @@ class NotificationService {
         return [];
       }
 
+      if (await this._adminAiProposalChatExists(quotation._id)) {
+        return [];
+      }
+
       const AdminUser = require("../models/user");
       const admins = await AdminUser.find({
         isAdmin: true,
@@ -352,6 +356,126 @@ class NotificationService {
   }
 
   /**
+   * Avisa a la admin que no se pudo auto-cotizar un producto de catálogo
+   * (sin variante, precio en cero o datos incompletos).
+   * @param {Object} quotation - Cotización poblada
+   * @param {Object} solicitud - Solicitud asociada
+   * @param {{ reason: string, lookupSpecs?: object, totalPrice?: number }} autoQuoteResult
+   * @returns {Promise<Array>}
+   */
+  async notifyAdminCatalogAutoQuoteSkipped(
+    quotation,
+    solicitud = null,
+    autoQuoteResult = {},
+  ) {
+    try {
+      if (!quotation?._id || !autoQuoteResult?.reason) {
+        return [];
+      }
+
+      const AdminUser = require("../models/user");
+      const admins = await AdminUser.find({
+        isAdmin: true,
+        isActive: true,
+      }).lean();
+
+      if (!admins.length) {
+        return [];
+      }
+
+      const clientName =
+        [quotation.user?.firstName, quotation.user?.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim() || "Cliente";
+      const productName =
+        quotation.product?.name || "Producto de catálogo";
+      const solicitudCode = solicitud?.code || quotation.solicitud?.code;
+      const specs = autoQuoteResult.lookupSpecs || {};
+      const specsLine = [
+        specs.color && `Color: ${specs.color}`,
+        specs.material && `Material: ${specs.material}`,
+        specs.dimensions && `Dimensiones: ${specs.dimensions}`,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+
+      const reasonMessages = {
+        missing_specs:
+          "Faltan color, material o dimensiones en la solicitud del cliente.",
+        no_variant:
+          "No hay variante configurada en el catálogo para esa combinación.",
+        zero_price:
+          "La variante existe pero el precio total está en $0. Defina totalPrice en Variantes y precios.",
+      };
+      const reasonText =
+        reasonMessages[autoQuoteResult.reason] ||
+        "No hay información de precio suficiente para cotizar automáticamente.";
+
+      const title = "Cotización automática no enviada al cliente";
+      const message = solicitudCode
+        ? `${clientName} (${solicitudCode}): ${productName}. ${reasonText} Debe cotizar manualmente.`
+        : `${clientName}: ${productName}. ${reasonText} Debe cotizar manualmente.`;
+
+      const chatLines = [
+        "No se envió cotización automática al cliente.",
+        "",
+        `Cliente: ${clientName}`,
+        `Producto: ${productName}`,
+        solicitudCode ? `Solicitud: ${solicitudCode}` : "",
+        specsLine ? `Combinación: ${specsLine}` : "",
+        "",
+        `Motivo: ${reasonText}`,
+        autoQuoteResult.reason === "zero_price"
+          ? `Precio actual en variante: ${this._formatCurrency(autoQuoteResult.totalPrice ?? 0)}`
+          : "",
+        "",
+        "Revise Variantes y precios del producto o envíe la cotización manualmente desde el panel.",
+      ].filter(Boolean);
+
+      const notifications = [];
+
+      for (const admin of admins) {
+        const notification = await NotificationDAO.create({
+          type: "cotizacion_auto_pendiente",
+          title,
+          message,
+          quotation: quotation._id,
+          solicitud:
+            solicitud?._id || quotation.solicitud?._id || quotation.solicitud,
+          recipient: admin._id,
+          read: false,
+          metadata: {
+            clientName,
+            productName,
+            kind: quotation.kind,
+            autoQuoteReason: autoQuoteResult.reason,
+            lookupSpecs: specs,
+            totalPrice: autoQuoteResult.totalPrice ?? null,
+            quantity: quotation.quantity || 1,
+          },
+        });
+        notifications.push(notification);
+      }
+
+      await this._createSystemMessage(
+        quotation,
+        chatLines.join("\n"),
+        [],
+        "admin",
+      );
+
+      return notifications;
+    } catch (err) {
+      console.error(
+        `[NOTIFICATION ERROR] Error en notifyAdminCatalogAutoQuoteSkipped:`,
+        err,
+      );
+      throw err;
+    }
+  }
+
+  /**
    * Notifica al cliente que la administradora envió la cotización final.
    * @param {Object} quotation - Cotización poblada con finalQuotation
    * @returns {Promise<Object|null>}
@@ -380,11 +504,6 @@ class NotificationService {
       const title = "Tu cotización está lista";
       const message = `La cotización de ${productName} es ${amountText}.`;
       const clientChatMessage = `${message} ¿La aceptas?`;
-      const adminProductName =
-        quotation.kind === "catalog"
-          ? quotation.product?.name || "producto de catálogo"
-          : quotation.customProduct?.description || "bolso personalizado";
-      const adminChatMessage = `${clientName} ha recibido la cotización de ${adminProductName} por ${amountText}.`;
 
       const notification = await NotificationDAO.create({
         type: "cotizacion_enviada",
@@ -413,15 +532,11 @@ class NotificationService {
         { messageType: "quotation_offer" },
       );
 
-      await this._createSystemMessage(
-        quotation,
-        adminChatMessage,
-        [],
-        "admin",
-      );
+      await this.notifyAdminFinalQuotationSent(quotation);
 
       if (quotation.user?.email) {
-        const html = `
+        try {
+          const html = `
           <!DOCTYPE html>
           <html>
             <head><meta charset="UTF-8"></head>
@@ -433,7 +548,13 @@ class NotificationService {
             </body>
           </html>
         `;
-        await sendMail(quotation.user.email, title, html);
+          await sendMail(quotation.user.email, title, html);
+        } catch (emailErr) {
+          console.error(
+            `[NOTIFICATION] Error enviando email cotización al cliente ${quotation.user.email}:`,
+            emailErr.message,
+          );
+        }
       }
 
       return notification;
@@ -982,6 +1103,53 @@ class NotificationService {
         </body>
       </html>
     `;
+  }
+
+  /**
+   * Avisa a la admin (solo chat) que la cotización final ya fue enviada al cliente.
+   * No incluye criterios ni justificación de IA.
+   * @param {Object} quotation - Cotización poblada con finalQuotation
+   * @returns {Promise<Object|null>}
+   */
+  async notifyAdminFinalQuotationSent(quotation) {
+    if (!quotation?.finalQuotation?.amount) {
+      return null;
+    }
+
+    const clientName =
+      [quotation.user?.firstName, quotation.user?.lastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim() || "Cliente";
+    const adminProductName =
+      quotation.kind === "catalog"
+        ? quotation.product?.name || "producto de catálogo"
+        : quotation.customProduct?.description || "bolso personalizado";
+    const amountText = this._formatCurrency(
+      quotation.finalQuotation.amount,
+      quotation.finalQuotation.currency || "COP",
+    );
+    const adminChatMessage = `${clientName} ha recibido la cotización de ${adminProductName} por ${amountText}.`;
+
+    return await this._createSystemMessage(
+      quotation,
+      adminChatMessage,
+      [],
+      "admin",
+    );
+  }
+
+  /**
+   * @private
+   */
+  async _adminAiProposalChatExists(quotationId) {
+    const Message = require("../models/message");
+    const count = await Message.countDocuments({
+      quotation: quotationId,
+      audience: "admin",
+      content: /^Propuesta de cotización generada por IA/m,
+    });
+    return count > 0;
   }
 
   /**

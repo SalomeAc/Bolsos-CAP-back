@@ -70,6 +70,70 @@ describe("QuotationController - flujo IA y finalQuotation", () => {
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
+  it("setFinalQuotation guarda breakdown en aiQuotation, no en notas al cliente", async () => {
+    const req = {
+      params: { id: "q1" },
+      body: {
+        amount: 200000,
+        breakdown: "Material premium y mayor volumen",
+      },
+      user: { id: "admin1" },
+    };
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+
+    QuotationDAO.read
+      .mockResolvedValueOnce({
+        _id: "q1",
+        status: "cotizada_ia",
+        kind: "custom",
+        solicitud: "s1",
+        aiQuotation: { amount: 180000, currency: "COP" },
+      })
+      .mockResolvedValueOnce({
+        _id: "q1",
+        status: "cotizada",
+        aiQuotation: {
+          amount: 180000,
+          breakdown: "Material premium y mayor volumen",
+        },
+        finalQuotation: { amount: 200000, currency: "COP" },
+      });
+
+    QuotationDAO.update.mockResolvedValue({});
+    QuotationDAO.patch.mockResolvedValue({});
+    QuotationDAO.unset.mockResolvedValue({});
+    SolicitudDAO.update.mockResolvedValue({});
+
+    await QuotationController.setFinalQuotation(req, res);
+
+    expect(QuotationDAO.update).toHaveBeenCalledWith(
+      "q1",
+      expect.objectContaining({
+        finalQuotation: expect.objectContaining({
+          amount: 200000,
+          currency: "COP",
+        }),
+      }),
+    );
+    expect(QuotationDAO.update).toHaveBeenCalledWith(
+      "q1",
+      expect.not.objectContaining({
+        finalQuotation: expect.objectContaining({
+          notes: "Material premium y mayor volumen",
+        }),
+      }),
+    );
+    expect(QuotationDAO.patch).toHaveBeenCalledWith(
+      "q1",
+      expect.objectContaining({
+        "aiQuotation.breakdown": "Material premium y mayor volumen",
+      }),
+    );
+  });
+
   it("onAiQuotationReady persiste precio_sugerido en aiQuotation", async () => {
     const req = {
       body: {
@@ -89,6 +153,11 @@ describe("QuotationController - flujo IA y finalQuotation", () => {
         _id: "q1",
         status: "pendiente",
         aiQuotation: {},
+      })
+      .mockResolvedValueOnce({
+        _id: "q1",
+        status: "cotizada_ia",
+        aiQuotation: { amount: 220000 },
       })
       .mockResolvedValueOnce({
         _id: "q1",

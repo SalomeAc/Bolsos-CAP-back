@@ -45,21 +45,21 @@ const ProductVariantSchema = new mongoose.Schema(
       required: [true, "Las dimensiones son requeridas"],
       trim: true,
     },
-    precio_total: {
+    totalPrice: {
       type: Number,
-      required: [true, "El precio total es requerido"],
-      min: [0, "El precio total no puede ser negativo"],
+      required: [true, "Total price is required"],
+      min: [0, "Total price cannot be negative"],
       default: 0,
     },
-    precio_material: {
+    materialPrice: {
       type: Number,
       default: 0,
-      min: [0, "El precio del material no puede ser negativo"],
+      min: [0, "Material price cannot be negative"],
     },
-    horas_trabajo: {
+    workHours: {
       type: Number,
-      default: 0,
-      min: [0, "Las horas de trabajo no pueden ser negativas"],
+      default: 6,
+      min: [0, "Work hours cannot be negative"],
     },
     sku: {
       type: String,
@@ -157,9 +157,9 @@ ProductVariantSchema.statics.buscarSimilares = async function (
         color: 1,
         material: 1,
         dimensions: 1,
-        precio_total: 1,
-        precio_material: 1,
-        horas_trabajo: 1,
+        totalPrice: 1,
+        materialPrice: 1,
+        workHours: 1,
         sku: 1,
         stock: 1,
         photo: 1,

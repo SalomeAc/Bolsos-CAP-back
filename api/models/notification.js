@@ -9,6 +9,7 @@ const NotificationSchema = new mongoose.Schema(
         "confirmacion_cotizacion",
         "cotizacion_ia_lista",
         "cotizacion_enviada",
+        "cotizacion_auto_pendiente",
         "cambio_estado",
         "respuesta_cliente",
       ],

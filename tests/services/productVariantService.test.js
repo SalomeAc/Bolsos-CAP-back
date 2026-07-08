@@ -23,6 +23,7 @@ describe("ProductVariantService", () => {
   describe("normalizeDimensions", () => {
     it("normaliza espacios y sufijo cm para comparar dimensiones", () => {
       expect(normalizeDimensions("26 x 22 x 8 cm")).toBe("26x22x8");
+      expect(normalizeDimensions("26 x 22 x8")).toBe("26x22x8");
       expect(normalizeDimensions("26x22x8")).toBe("26x22x8");
     });
   });
@@ -44,9 +45,9 @@ describe("ProductVariantService", () => {
           color: "Negro",
           material: "Algodón",
           dimensions: "26 x 22 x 8",
-          precio_total: 150000,
-          precio_material: 40000,
-          horas_trabajo: 3,
+          totalPrice: 150000,
+          materialPrice: 40000,
+          workHours: 6,
         },
       ]);
 
@@ -59,7 +60,8 @@ describe("ProductVariantService", () => {
       expect(variant).toEqual(
         expect.objectContaining({
           _id: "v1",
-          precio_total: 150000,
+          totalPrice: 150000,
+          workHours: 6,
         }),
       );
     });

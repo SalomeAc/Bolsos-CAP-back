@@ -5,11 +5,10 @@ const { connectDB, disconnectDB } = require("../api/config/database");
 const Product = require("../api/models/product");
 const ProductVariant = require("../api/models/productVariant");
 
-const DEFAULT_PRECIO_TOTAL = Number(process.env.SEED_VARIANT_PRICE ?? 100000);
-const DEFAULT_PRECIO_MATERIAL = Number(
-  process.env.SEED_VARIANT_PRECIO_MATERIAL ?? 0,
+const DEFAULT_TOTAL_PRICE = Number(process.env.SEED_VARIANT_PRICE ?? 100000);
+const DEFAULT_MATERIAL_PRICE = Number(
+  process.env.SEED_VARIANT_MATERIAL_PRICE ?? 0,
 );
-const DEFAULT_HORAS_TRABAJO = Number(process.env.SEED_VARIANT_HORAS ?? 0);
 const DEFAULT_STOCK = Number(process.env.SEED_VARIANT_STOCK ?? 0);
 
 function parseArgs() {
@@ -83,9 +82,9 @@ async function seedVariantsForProduct(product, { dryRun }) {
       color,
       material,
       dimensions,
-      precio_total: DEFAULT_PRECIO_TOTAL,
-      precio_material: DEFAULT_PRECIO_MATERIAL,
-      horas_trabajo: DEFAULT_HORAS_TRABAJO,
+      totalPrice: DEFAULT_TOTAL_PRICE,
+      materialPrice: DEFAULT_MATERIAL_PRICE,
+      workHours: 6,
       stock: DEFAULT_STOCK,
       sku: buildSku(product.code, color, material, dimensions),
       embeddingDesactualizado: true,
@@ -145,7 +144,7 @@ async function main() {
   console.log(`Combinaciones posibles: ${totals.total}`);
   console.log(`Creadas:               ${totals.created}`);
   console.log(`Omitidas (ya existían): ${totals.skipped}`);
-  console.log(`Precio total usado:    ${DEFAULT_PRECIO_TOTAL}`);
+  console.log(`Total price used:      ${DEFAULT_TOTAL_PRICE}`);
 
   await disconnectDB();
 }

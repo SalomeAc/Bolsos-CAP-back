@@ -22,6 +22,25 @@ class ProductVariantDAO {
     }).lean();
   }
 
+  async updatePricing(id, { totalPrice, materialPrice, workHours }) {
+    return ProductVariant.findByIdAndUpdate(
+      id,
+      {
+        $set: { totalPrice, materialPrice, workHours },
+        $unset: {
+          price: "",
+          precio_total: "",
+          precio_material: "",
+          horas_trabajo: "",
+        },
+      },
+      {
+        new: true,
+        runValidators: true,
+      },
+    ).lean();
+  }
+
   async findByProductAndSpecs(productId, { color, material, dimensions }) {
     return ProductVariant.findOne({
       productId,

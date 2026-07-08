@@ -83,9 +83,9 @@ class QuotationController extends GlobalController {
       // Vincular cotización en la solicitud (integridad bidireccional)
       await SolicitudDAO.update(solicitud._id, { quotation: quotation._id });
 
-      let autoQuotedCatalog = false;
+      let autoQuoteResult = { applied: false };
       if (kind === "catalog") {
-        autoQuotedCatalog = await this._applyCatalogAutoQuotation(
+        autoQuoteResult = await this._applyCatalogAutoQuotation(
           quotation._id,
           solicitud._id,
         );
@@ -112,18 +112,53 @@ class QuotationController extends GlobalController {
       aiLog.logQuotationState("POST-TRIGGER", populatedQuotation, {
         aiWorkflow: aiResult,
         note: this._describeAiWorkflowResult(kind, aiResult),
+        autoQuote: autoQuoteResult,
       });
       const populatedSolicitud = await SolicitudDAO.read(solicitud._id);
 
-      // Enviar notificaciones (asíncrono, no bloquea)
-      this._sendNotificationAsync(populatedQuotation, {
-        solicitud: populatedSolicitud,
-        options: { autoQuotedCatalog },
-      }).catch((err) => {
-        console.error("Error enviando notificaciones de cotización:", err);
-      });
+      if (autoQuoteResult.applied) {
+        const quotedQuotation = await this.dao.read(quotation._id);
+        aiLog.info("CREATE", "Catálogo auto-cotizado, enviando oferta al cliente", {
+          quotationId: quotation._id?.toString?.() || quotation._id,
+          amount: quotedQuotation?.finalQuotation?.amount ?? null,
+          status: quotedQuotation?.status ?? null,
+        });
+        try {
+          await this._sendNotificationAsync(quotedQuotation, {
+            solicitud: populatedSolicitud,
+            options: { autoQuotedCatalog: true },
+          });
+        } catch (err) {
+          console.error(
+            `[QUOTATION] Error enviando oferta automática de catálogo ${quotation._id}:`,
+            err.message,
+          );
+        }
+      } else {
+        try {
+          await this._sendNotificationAsync(populatedQuotation, {
+            solicitud: populatedSolicitud,
+            options: { autoQuotedCatalog: false },
+          });
+          if (kind === "catalog" && autoQuoteResult.reason) {
+            await NotificationService.notifyAdminCatalogAutoQuoteSkipped(
+              populatedQuotation,
+              populatedSolicitud,
+              autoQuoteResult,
+            );
+          }
+        } catch (err) {
+          console.error("Error enviando notificaciones de cotización:", err);
+        }
+      }
 
-      return res.status(201).json(this._sanitizeQuotationForClient(populatedQuotation));
+      const responseQuotation = autoQuoteResult.applied
+        ? await this.dao.read(quotation._id)
+        : populatedQuotation;
+
+      return res
+        .status(201)
+        .json(this._sanitizeQuotationForClient(responseQuotation));
     } catch (err) {
       if (err.name === "ValidationError") {
         const firstMessage = Object.values(err.errors)[0].message;
@@ -251,6 +286,21 @@ class QuotationController extends GlobalController {
   ) {
     try {
       if (options.autoQuotedCatalog) {
+        if (!(quotation?.finalQuotation?.amount > 0)) {
+          console.error(
+            `[QUOTATION] Auto-cotización marcada pero sin finalQuotation.amount en cotización ${quotation?._id}`,
+          );
+          await NotificationService.notifyAdminCatalogAutoQuoteSkipped(
+            quotation,
+            solicitud,
+            {
+              reason: "zero_price",
+              lookupSpecs: quotation?.customization,
+              totalPrice: 0,
+            },
+          );
+          return;
+        }
         await NotificationService.notifyClientQuotationSent(quotation);
         await NotificationService.notifyAdminNewRequest(quotation, solicitud);
       } else {
@@ -471,30 +521,82 @@ class QuotationController extends GlobalController {
 
   /**
    * Cotización automática de catálogo usando ProductVariant.
+   * @returns {Promise<{ applied: boolean, reason?: string, lookupSpecs?: object, totalPrice?: number }>}
    * @private
    */
   async _applyCatalogAutoQuotation(quotationId, solicitudId) {
     const quotation = await this.dao.read(quotationId);
     if (!quotation || quotation.kind !== "catalog") {
-      return false;
+      return { applied: false, reason: "not_catalog" };
     }
 
     const productId = quotation.product?._id || quotation.product;
-    const variant = await ProductVariantService.findVariantForQuotation(
+    const lookupSpecs = {
+      color: quotation.customization?.color,
+      material: quotation.customization?.material,
+      dimensions:
+        quotation.customization?.size ||
+        quotation.customization?.dimensions ||
+        quotation.customization?.dimension,
+    };
+
+    if (!lookupSpecs.color || !lookupSpecs.material || !lookupSpecs.dimensions) {
+      aiLog.warn("AUTO-QUOTE", "Faltan datos de personalización en catálogo", {
+        quotationId,
+        lookupSpecs,
+      });
+      return { applied: false, reason: "missing_specs", lookupSpecs };
+    }
+
+    let variant = await ProductVariantService.findVariantForQuotation(
       productId,
-      {
-        color: quotation.customization?.color,
-        material: quotation.customization?.material,
-        dimensions: quotation.customization?.size,
-      },
+      lookupSpecs,
     );
 
-    if (!variant || !(variant.precio_total > 0)) {
-      return false;
+    if (!variant) {
+      await ProductVariantService.syncVariantsForProduct(productId).catch(
+        (err) => {
+          aiLog.warn("AUTO-QUOTE", "No se pudieron sincronizar variantes", {
+            quotationId,
+            productId: productId?.toString?.() || productId,
+            errorMessage: err.message,
+          });
+        },
+      );
+      variant = await ProductVariantService.findVariantForQuotation(
+        productId,
+        lookupSpecs,
+      );
+    }
+
+    if (!variant) {
+      aiLog.warn("AUTO-QUOTE", "Sin variante para cotización de catálogo", {
+        quotationId,
+        productId: productId?.toString?.() || productId,
+        lookupSpecs,
+        hint: "Verifique color/material/dimensiones en ProductVariant o sincronice variantes",
+      });
+      return { applied: false, reason: "no_variant", lookupSpecs };
+    }
+
+    if (!(variant.totalPrice > 0)) {
+      aiLog.warn("AUTO-QUOTE", "Variante encontrada pero totalPrice es 0", {
+        quotationId,
+        variantId: variant._id?.toString?.() || variant._id,
+        lookupSpecs,
+        totalPrice: variant.totalPrice,
+      });
+      return {
+        applied: false,
+        reason: "zero_price",
+        lookupSpecs,
+        totalPrice: variant.totalPrice ?? 0,
+        variantId: variant._id,
+      };
     }
 
     const quantity = quotation.quantity || 1;
-    const amount = variant.precio_total * quantity;
+    const amount = variant.totalPrice * quantity;
 
     await this.dao.update(quotationId, {
       finalQuotation: {
@@ -507,7 +609,21 @@ class QuotationController extends GlobalController {
     });
 
     await SolicitudDAO.update(solicitudId, { status: "cotizada" });
-    return true;
+
+    aiLog.info("AUTO-QUOTE", "Cotización automática aplicada", {
+      quotationId,
+      variantId: variant._id?.toString?.() || variant._id,
+      totalPrice: variant.totalPrice,
+      amount,
+      quantity,
+    });
+
+    return {
+      applied: true,
+      lookupSpecs,
+      totalPrice: variant.totalPrice,
+      amount,
+    };
   }
 
   _describeAiWorkflowResult(kind, aiResult) {
@@ -861,7 +977,7 @@ class QuotationController extends GlobalController {
   // --- Admin: fijar la cotización final y enviarla al cliente ---
   async setFinalQuotation(req, res) {
     try {
-      const { amount, currency, notes } = req.body;
+      const { amount, currency, notes, clientNotes, breakdown } = req.body;
 
       const quotation = await this.dao.read(req.params.id);
       if (!quotation) {
@@ -907,16 +1023,39 @@ class QuotationController extends GlobalController {
         repaired.finalQuotation?.currency ||
         "COP";
 
+      const resolvedClientNotes = clientNotes ?? notes;
+      const finalQuotation = {
+        amount: resolvedAmountRaw,
+        currency: resolvedCurrency,
+        quotedBy: req.user.id,
+        quotedAt: new Date(),
+      };
+
+      if (
+        resolvedClientNotes != null &&
+        String(resolvedClientNotes).trim() !== ""
+      ) {
+        finalQuotation.notes = String(resolvedClientNotes).trim();
+      }
+
       await this.dao.update(req.params.id, {
-        finalQuotation: {
-          amount: resolvedAmountRaw,
-          currency: resolvedCurrency,
-          notes,
-          quotedBy: req.user.id,
-          quotedAt: new Date(),
-        },
+        finalQuotation,
         status: "cotizada",
       });
+
+      if (breakdown != null && String(breakdown).trim() !== "") {
+        await this.dao.patch(req.params.id, {
+          "aiQuotation.breakdown": String(breakdown).trim(),
+        });
+      }
+
+      if (repaired.aiQuotation?.amount != null) {
+        await this.dao.patch(req.params.id, {
+          "aiQuotation.adminNotifiedAt":
+            repaired.aiQuotation.adminNotifiedAt || new Date(),
+        });
+      }
+
       await this.dao.unset(req.params.id, { clientResponse: "" });
 
       // HU2: actualizar estado de la solicitud asociada
@@ -1436,11 +1575,12 @@ class QuotationController extends GlobalController {
     }
 
     const populated = await this.dao.read(quotation._id);
-    await NotificationService.notifyAdminAiQuotationReady(populated);
 
     await this.dao.patch(quotation._id, {
       "aiQuotation.adminNotifiedAt": new Date(),
     });
+
+    await NotificationService.notifyAdminAiQuotationReady(populated);
 
     aiLog.info("NOTIFY", "Administradora notificada sobre propuesta IA", {
       quotationId: quotation._id?.toString?.() || quotation._id,
