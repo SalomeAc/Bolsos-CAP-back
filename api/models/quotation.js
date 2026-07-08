@@ -44,6 +44,7 @@ const QuotationSchema = new mongoose.Schema(
       dimensions: { type: String },
       materials: { type: [String] },
       photo: { type: String }, // foto de referencia que aporta el cliente
+      descriptionImagen: { type: String, default: null },
     },
 
     quantity: {
@@ -76,8 +77,12 @@ const QuotationSchema = new mongoose.Schema(
       breakdown: { type: String },
       model: { type: String },
       generatedAt: { type: Date },
-      confianza: { type: String },
-      referenciasUsadas: { type: mongoose.Schema.Types.Mixed },
+      confianza: {
+        type: String,
+        enum: ["alta", "media", "baja"],
+      },
+      referenciasUsadas: [{ type: mongoose.Schema.Types.Mixed }],
+      ajusteDimensionalPromedio: { type: Number },
       coeficientesAplicados: { type: mongoose.Schema.Types.Mixed },
       adminNotifiedAt: { type: Date },
     },
