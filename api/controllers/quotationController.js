@@ -4,6 +4,7 @@ const SolicitudDAO = require("../dao/solicitudDAO");
 const UserDAO = require("../dao/userDAO");
 const NotificationService = require("../services/notificationService");
 const CloudinaryService = require("../services/cloudinaryService");
+const { triggerAIQuotation } = require("../services/aiQuotationService");
 
 class QuotationController extends GlobalController {
   constructor() {
@@ -80,6 +81,10 @@ class QuotationController extends GlobalController {
       }).catch((err) => {
         console.error("Error enviando notificaciones de cotización:", err);
       });
+
+      if (kind === "custom") {
+        triggerAIQuotation(solicitud._id);
+      }
 
       return res.status(201).json(populatedQuotation);
     } catch (err) {
@@ -162,6 +167,8 @@ class QuotationController extends GlobalController {
       }).catch((err) => {
         console.error("Error enviando notificaciones de cotización:", err);
       });
+
+      triggerAIQuotation(solicitud._id);
 
       return res.status(201).json(populatedQuotation);
     } catch (err) {
