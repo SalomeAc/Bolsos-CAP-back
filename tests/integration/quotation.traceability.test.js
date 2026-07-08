@@ -2,14 +2,19 @@ const QuotationController = require("../../api/controllers/quotationController")
 const QuotationDAO = require("../../api/dao/quotationDAO");
 const SolicitudDAO = require("../../api/dao/solicitudDAO");
 const NotificationService = require("../../api/services/notificationService");
+const ProductVariantService = require("../../api/services/productVariantService");
 
 jest.mock("../../api/dao/quotationDAO");
 jest.mock("../../api/dao/solicitudDAO");
 jest.mock("../../api/services/notificationService");
+jest.mock("../../api/services/productVariantService");
 
 describe("QuotationController - Trazabilidad (HU2)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    ProductVariantService.findVariantForQuotation.mockResolvedValue(null);
+    NotificationService.notifyClientQuotationReceived.mockResolvedValue({});
+    NotificationService.notifyClientQuotationSent.mockResolvedValue({});
   });
 
   describe("createQuotation - Asociación solicitud ↔ cotización", () => {
@@ -49,6 +54,7 @@ describe("QuotationController - Trazabilidad (HU2)", () => {
       SolicitudDAO.read.mockResolvedValue({ ...mockSolicitud, quotation: "quotation123" });
       NotificationService.sendQuotationConfirmation.mockResolvedValue({});
       NotificationService.notifyAdminNewRequest.mockResolvedValue([{}]);
+      NotificationService.notifyClientQuotationReceived.mockResolvedValue({});
 
       await QuotationController.createQuotation(req, res);
 
@@ -165,11 +171,17 @@ describe("QuotationController - Trazabilidad (HU2)", () => {
       };
 
       QuotationDAO.read
-        .mockResolvedValueOnce({ _id: "quotation123", solicitud: "solicitud123" })
+        .mockResolvedValueOnce({
+          _id: "quotation123",
+          solicitud: "solicitud123",
+          status: "cotizada_ia",
+        })
         .mockResolvedValueOnce({ _id: "quotation123", status: "cotizada" });
 
       QuotationDAO.update.mockResolvedValue({ _id: "quotation123", status: "cotizada" });
+      QuotationDAO.unset.mockResolvedValue({});
       SolicitudDAO.update.mockResolvedValue({ _id: "solicitud123", status: "cotizada" });
+      NotificationService.notifyClientQuotationSent.mockResolvedValue({});
 
       await QuotationController.setFinalQuotation(req, res);
 

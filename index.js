@@ -4,6 +4,7 @@ require("dotenv").config();
 const cors = require("cors");
 const routes = require("./api/routes/routes.js");
 const { connectDB } = require("./api/config/database");
+const aiLog = require("./api/utils/aiWorkflowLogger");
 
 const app = express();
 
@@ -14,6 +15,7 @@ app.use(cors());
 
 
 connectDB();
+aiLog.logConfigStatus();
 
 
 app.use("/api/", routes);

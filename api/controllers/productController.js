@@ -1,5 +1,6 @@
 const productDAO = require("../dao/productDAO");
 const Product = require("../models/product");
+const ProductVariantService = require("../services/productVariantService");
 
 const toArray = (value) => {
   if (!value) return [];
@@ -34,8 +35,14 @@ const normalizeProduct = (product) => {
 const createProduct = async (req, res) => {
   try {
     const product = await productDAO.createProduct(req.body);
+    await ProductVariantService.syncVariantsForProduct(product._id).catch((err) => {
+      console.warn(
+        `[PRODUCT] No se pudieron sincronizar variantes para ${product._id}:`,
+        err.message,
+      );
+    });
 
-    res.status(201).json(product);
+    res.status(201).json(normalizeProduct(product));
   } catch (error) {
     res.status(400).json({
       error: error.message,
@@ -90,8 +97,16 @@ const updateProduct = async (req, res) => {
       });
     }
 
-    res.json(normalizeProduct(updatedProduct));
+    await ProductVariantService.syncVariantsForProduct(updatedProduct._id).catch(
+      (err) => {
+        console.warn(
+          `[PRODUCT] No se pudieron sincronizar variantes para ${updatedProduct._id}:`,
+          err.message,
+        );
+      },
+    );
 
+    res.json(normalizeProduct(updatedProduct));
   } catch (error) {
     res.status(400).json({
       error: error.message,

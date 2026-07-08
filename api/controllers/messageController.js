@@ -94,7 +94,9 @@ class MessageController extends GlobalController {
           .json({ message: "No tienes permiso para ver los mensajes de esta cotización" });
       }
 
-      const messages = await this.dao.findByQuotation(quotationId);
+      const messages = await this.dao.findByQuotation(quotationId, {
+        isAdmin,
+      });
       return res.status(200).json(messages);
     } catch (err) {
       console.error("getMessagesByQuotation error:", err);
@@ -144,7 +146,8 @@ class MessageController extends GlobalController {
       console.log("✅ ACCESS GRANTED");
       const messages = await this.dao.findLatestByQuotation(
         quotationId,
-        limit ? parseInt(limit) : 50
+        limit ? parseInt(limit) : 50,
+        { isAdmin },
       );
       // Revertir para que los más recientes estén al final
       return res.status(200).json(messages.reverse());

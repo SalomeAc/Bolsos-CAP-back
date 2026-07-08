@@ -8,7 +8,7 @@ async function main() {
   await connectDB();
 
   // Solo si ya tienes un Product en la BD:
-  // await ProductVariant.create({ productId: "...", color: "...", material: "...", dimensions: "26 x 22 x 8", price: 100000 });
+  // await ProductVariant.create({ productId: "...", color: "...", material: "...", dimensions: "26 x 22 x 8", totalPrice: 100000 });
 
   await CoeficienteAjuste.create({
     tipo: "material",
