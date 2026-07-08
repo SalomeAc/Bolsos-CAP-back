@@ -6,19 +6,42 @@ class MessageDAO extends GlobalDAO {
     super(Message);
   }
 
+  _clientMessageFilter(includeAdminOnly) {
+    if (includeAdminOnly) {
+      return {};
+    }
+
+    return {
+      audience: { $ne: "admin" },
+      content: {
+        $not: /^Propuesta de cotización generada por IA/m,
+      },
+    };
+  }
+
   // Obtener todos los mensajes de una cotización ordenados por fecha
-  async findByQuotation(quotationId) {
+  async findByQuotation(quotationId, { includeAdminOnly = true } = {}) {
+    const filter = {
+      quotation: quotationId,
+      ...this._clientMessageFilter(includeAdminOnly),
+    };
+
     return await this.model
-      .find({ quotation: quotationId })
+      .find(filter)
       .populate("sender", "firstName lastName email")
       .sort({ createdAt: 1 })
       .exec();
   }
 
   // Obtener los últimos N mensajes de una cotización
-  async findLatestByQuotation(quotationId, limit = 50) {
+  async findLatestByQuotation(quotationId, limit = 50, { includeAdminOnly = true } = {}) {
+    const filter = {
+      quotation: quotationId,
+      ...this._clientMessageFilter(includeAdminOnly),
+    };
+
     return await this.model
-      .find({ quotation: quotationId })
+      .find(filter)
       .populate("sender", "firstName lastName email")
       .sort({ createdAt: -1 })
       .limit(limit)

@@ -240,6 +240,198 @@ class NotificationService {
   }
 
   /**
+   * Notifica a la administradora que la propuesta de IA está lista para revisar.
+   * @param {Object} quotation - Cotización poblada con aiQuotation
+   * @returns {Promise<Array>}
+   */
+  async notifyAdminAiQuotationReady(quotation) {
+    try {
+      if (!quotation?.aiQuotation?.amount) {
+        return [];
+      }
+
+      const AdminUser = require("../models/user");
+      const admins = await AdminUser.find({
+        isAdmin: true,
+        isActive: true,
+      }).lean();
+
+      if (!admins.length) {
+        return [];
+      }
+
+      const clientName =
+        [quotation.user?.firstName, quotation.user?.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim() || "Cliente";
+      const productName =
+        quotation.kind === "catalog"
+          ? quotation.product?.name || "Producto de catálogo"
+          : quotation.customProduct?.description || "Bolso personalizado";
+      const amountText = this._formatCurrency(
+        quotation.aiQuotation.amount,
+        quotation.aiQuotation.currency || "COP",
+      );
+      const solicitudCode = quotation.solicitud?.code;
+      const title = "Cotización generada por IA";
+      const message = solicitudCode
+        ? `La IA sugirió ${amountText} para ${solicitudCode} (${productName}). Revisa y envía al cliente.`
+        : `La IA sugirió ${amountText} para la solicitud de ${clientName}: ${productName}.`;
+
+      const notifications = [];
+
+      for (const admin of admins) {
+        const notification = await NotificationDAO.create({
+          type: "cotizacion_ia_lista",
+          title,
+          message,
+          quotation: quotation._id,
+          solicitud: quotation.solicitud?._id || quotation.solicitud,
+          recipient: admin._id,
+          read: false,
+          metadata: {
+            clientName,
+            clientEmail: quotation.user?.email,
+            productName,
+            kind: quotation.kind,
+            quantity: quotation.quantity || 1,
+            requestDate: quotation.aiQuotation.generatedAt || new Date(),
+            aiAmount: quotation.aiQuotation.amount,
+            aiCurrency: quotation.aiQuotation.currency || "COP",
+            breakdown: quotation.aiQuotation.breakdown,
+          },
+        });
+
+        notifications.push(notification);
+
+        if (admin.email) {
+          try {
+            await this._sendAdminEmail(
+              admin.email,
+              title,
+              `${message}\n\nJustificación IA: ${quotation.aiQuotation.breakdown || "Sin detalle"}`,
+              quotation,
+              solicitudCode,
+            );
+          } catch (emailErr) {
+            console.error(
+              `[NOTIFICATION] Error enviando email IA admin a ${admin.email}:`,
+              emailErr.message,
+            );
+          }
+        }
+      }
+
+      await this._createSystemMessage(
+        quotation,
+        [
+          "Propuesta de cotización generada por IA",
+          "",
+          `Monto sugerido: ${amountText}`,
+          quotation.aiQuotation.breakdown
+            ? `Justificación: ${quotation.aiQuotation.breakdown}`
+            : "",
+          "",
+          "Revisa la propuesta y pulsa Aceptar o Modificar para enviarla al cliente.",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        [],
+        "admin",
+      );
+
+      return notifications;
+    } catch (err) {
+      console.error(
+        `[NOTIFICATION ERROR] Error en notifyAdminAiQuotationReady:`,
+        err,
+      );
+      throw err;
+    }
+  }
+
+  /**
+   * Notifica al cliente que la administradora envió la cotización final.
+   * @param {Object} quotation - Cotización poblada con finalQuotation
+   * @returns {Promise<Object|null>}
+   */
+  async notifyClientQuotationSent(quotation) {
+    try {
+      if (!quotation?.finalQuotation?.amount) {
+        return null;
+      }
+
+      const recipientId = quotation.user?._id || quotation.user;
+      if (!recipientId) {
+        return null;
+      }
+
+      const clientName =
+        [quotation.user?.firstName, quotation.user?.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim() || "Cliente";
+      const productName =
+        quotation.kind === "catalog"
+          ? quotation.product?.name || "tu producto"
+          : "tu bolso";
+      const amountText = this._formatCurrency(
+        quotation.finalQuotation.amount,
+        quotation.finalQuotation.currency || "COP",
+      );
+      const title = "Tu cotización está lista";
+      const message = `La cotización de ${productName} es ${amountText}.`;
+      const chatMessage = message;
+
+      const notification = await NotificationDAO.create({
+        type: "cotizacion_enviada",
+        title,
+        message,
+        quotation: quotation._id,
+        solicitud: quotation.solicitud?._id || quotation.solicitud,
+        recipient: recipientId,
+        read: false,
+        metadata: {
+          clientName,
+          productName,
+          kind: quotation.kind,
+          quantity: quotation.quantity || 1,
+          requestDate: quotation.finalQuotation.quotedAt || new Date(),
+          finalAmount: quotation.finalQuotation.amount,
+          finalCurrency: quotation.finalQuotation.currency || "COP",
+        },
+      });
+
+      await this._createSystemMessage(quotation, chatMessage, [], "all");
+
+      if (quotation.user?.email) {
+        const html = `
+          <!DOCTYPE html>
+          <html>
+            <head><meta charset="UTF-8"></head>
+            <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+              <h2>${title}</h2>
+              <p>Hola ${clientName},</p>
+              <p>${message}</p>
+              <p>Puedes responder desde Mis Cotizaciones.</p>
+            </body>
+          </html>
+        `;
+        await sendMail(quotation.user.email, title, html);
+      }
+
+      return notification;
+    } catch (err) {
+      console.error(
+        `[NOTIFICATION ERROR] Error en notifyClientQuotationSent:`,
+        err,
+      );
+      throw err;
+    }
+  }
+
+  /**
    * Crea una notificación para el cliente cuando cambia el estado del pedido
    * @param {Object} quotation - Cotización poblada
    * @param {string} previousStatus - Estado anterior
@@ -295,6 +487,160 @@ class NotificationService {
       );
       throw err;
     }
+  }
+
+  /**
+   * Notifica a la administradora cuando el cliente acepta, rechaza o propone un precio.
+   * @param {Object} quotation - Cotización poblada
+   * @param {Object} response - Datos de respuesta del cliente
+   * @returns {Promise<Array>} Notificaciones creadas para cada admin
+   */
+  async notifyAdminClientResponse(quotation, response = {}) {
+    try {
+      if (!quotation || !quotation._id) {
+        throw new Error(
+          "Cotización requerida para notificar respuesta del cliente",
+        );
+      }
+
+      const AdminUser = require("../models/user");
+      const admins = await AdminUser.find({ isAdmin: true, isActive: true }).lean();
+
+      if (!admins.length) {
+        console.warn(
+          "[NOTIFICATION] No hay administradores activos para notificar respuesta del cliente",
+        );
+        return [];
+      }
+
+      const clientName =
+        [quotation.user?.firstName, quotation.user?.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim() || "Cliente";
+      const productName =
+        quotation.kind === "catalog"
+          ? quotation.product?.name || "Producto de catálogo"
+          : quotation.customProduct?.description || "Bolso personalizado";
+
+      const decision =
+        response.decision || quotation.clientResponse?.decision || "propuesta";
+      const proposedAmount =
+        response.proposedAmount ?? quotation.clientResponse?.proposedAmount;
+      const currency = response.currency || quotation.clientResponse?.currency || "COP";
+      const amountText = this._formatCurrency(proposedAmount, currency);
+
+      const title =
+        decision === "aceptada"
+          ? "El cliente aceptó la cotización"
+          : decision === "rechazada"
+            ? "El cliente rechazó la cotización"
+            : "El cliente propuso un nuevo precio";
+
+      const message =
+        decision === "aceptada"
+          ? `${clientName} aceptó la cotización de ${productName}.`
+          : decision === "rechazada"
+            ? `${clientName} rechazó la cotización de ${productName}.`
+            : `${clientName} propuso ${amountText} para ${productName}.`;
+
+      const notifications = [];
+
+      for (const admin of admins) {
+        const notification = await NotificationDAO.create({
+          type: "respuesta_cliente",
+          title,
+          message,
+          quotation: quotation._id,
+          solicitud: quotation.solicitud?._id || quotation.solicitud,
+          recipient: admin._id,
+          read: false,
+          metadata: {
+            clientName,
+            clientEmail: quotation.user?.email,
+            productName,
+            kind: quotation.kind,
+            quantity: quotation.quantity || 1,
+            requestDate: quotation.createdAt || new Date(),
+          },
+        });
+
+        notifications.push(notification);
+
+        if (admin.email) {
+          try {
+            await this._sendAdminEmail(
+              admin.email,
+              title,
+              `${message}${
+                proposedAmount != null ? `\n\nPrecio propuesto: ${amountText}` : ""
+              }`,
+              quotation,
+              quotation.solicitud?.code || quotation.solicitud?._id?.toString?.() || quotation.solicitud,
+            );
+          } catch (emailErr) {
+            console.error(
+              `[NOTIFICATION] Error enviando email admin a ${admin.email}:`,
+              emailErr.message,
+            );
+          }
+        }
+      }
+
+      return notifications;
+    } catch (err) {
+      console.error(
+        `[NOTIFICATION ERROR] Error en notifyAdminClientResponse:`,
+        err,
+      );
+      throw err;
+    }
+  }
+
+  /**
+   * Envía correo de confirmación al cliente cuando acepta la cotización.
+   * @param {Object} quotation - Cotización poblada
+   * @returns {Promise<void>}
+   */
+  async sendAcceptanceEmailToClient(quotation) {
+    if (!quotation || !quotation.user || !quotation.user.email) {
+      throw new Error("Cotización debe tener usuario con email");
+    }
+
+    const clientName =
+      [quotation.user?.firstName, quotation.user?.lastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim() || "Cliente";
+    const productName =
+      quotation.kind === "catalog"
+        ? quotation.product?.name || "tu producto"
+        : quotation.customProduct?.description || "tu bolso personalizado";
+
+    const amount = quotation.finalQuotation?.amount ?? quotation.aiQuotation?.amount;
+    const currency =
+      quotation.finalQuotation?.currency || quotation.aiQuotation?.currency || "COP";
+    const amountText = this._formatCurrency(amount, currency);
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head><meta charset="UTF-8"></head>
+        <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+          <h2>Tu pedido fue aceptado</h2>
+          <p>Hola ${clientName}, hemos registrado la aceptación de tu cotización para ${productName}.</p>
+          <p><strong>Valor confirmado:</strong> ${amountText}</p>
+          <p><strong>Estado actual:</strong> ${this._getStatusLabel(quotation.status)}</p>
+          <p>Te contactaremos con los siguientes pasos del pedido.</p>
+        </body>
+      </html>
+    `;
+
+    await sendMail(
+      quotation.user.email,
+      "Confirmación de pedido aceptado",
+      html,
+    );
   }
 
   _getStatusLabel(status) {
@@ -554,7 +900,12 @@ class NotificationService {
    * Crea mensaje del sistema en la plataforma
    * @private
    */
-  async _createSystemMessage(quotation, messageContent, attachments = []) {
+  async _createSystemMessage(
+    quotation,
+    messageContent,
+    attachments = [],
+    audience = "all",
+  ) {
     const AdminUser = require("../models/user");
     const adminUser = await AdminUser.findOne({ isAdmin: true }).lean();
     const senderId = adminUser?._id || quotation.user._id;
@@ -564,6 +915,7 @@ class NotificationService {
       sender: senderId,
       content: messageContent,
       isSystemMessage: true,
+      audience,
       attachments: attachments || [],
     });
   }
@@ -581,6 +933,18 @@ class NotificationService {
       "Cotización Registrada Correctamente",
       htmlContent,
     );
+  }
+
+  _formatCurrency(amount, currency = "COP") {
+    if (amount == null || Number.isNaN(Number(amount))) {
+      return "Pendiente de definir";
+    }
+
+    return new Intl.NumberFormat("es-CO", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 0,
+    }).format(Number(amount));
   }
 }
 

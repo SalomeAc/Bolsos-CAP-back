@@ -3,8 +3,14 @@ const router = express.Router();
 
 const authenticateToken = require("../middlewares/auth");
 const requireAdmin = require("../middlewares/requireAdmin");
+const verifyN8nWebhook = require("../middlewares/verifyN8nWebhook");
 const QuotationController = require("../controllers/quotationController");
 const upload = require("../middlewares/upload");
+
+// Callback del flujo n8n cuando la IA termina (sin login de usuario).
+router.post("/webhook/ai-ready", verifyN8nWebhook, (req, res) =>
+  QuotationController.onAiQuotationReady(req, res),
+);
 
 // Todas las rutas de cotizaciones requieren login.
 router.use(authenticateToken);

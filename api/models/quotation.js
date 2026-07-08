@@ -76,6 +76,10 @@ const QuotationSchema = new mongoose.Schema(
       breakdown: { type: String },
       model: { type: String },
       generatedAt: { type: Date },
+      confianza: { type: String },
+      referenciasUsadas: { type: mongoose.Schema.Types.Mixed },
+      coeficientesAplicados: { type: mongoose.Schema.Types.Mixed },
+      adminNotifiedAt: { type: Date },
     },
 
     // Cotización final de la administradora
@@ -85,6 +89,19 @@ const QuotationSchema = new mongoose.Schema(
       notes: { type: String },
       quotedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
       quotedAt: { type: Date },
+    },
+
+    // Respuesta del cliente a la cotización (acepta, rechaza o propone otro valor)
+    clientResponse: {
+      decision: {
+        type: String,
+        enum: ["aceptada", "rechazada", "propuesta"],
+      },
+      proposedAmount: { type: Number },
+      currency: { type: String, default: "COP" },
+      notes: { type: String },
+      respondedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      respondedAt: { type: Date },
     },
   },
   { timestamps: true }

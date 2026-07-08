@@ -35,6 +35,13 @@ const MessageSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+
+    // all = visible para cliente y admin; admin = solo administradores (p. ej. propuesta IA)
+    audience: {
+      type: String,
+      enum: ["all", "admin"],
+      default: "all",
+    },
   },
   { timestamps: true }
 );

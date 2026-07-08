@@ -4,7 +4,14 @@ const NotificationSchema = new mongoose.Schema(
   {
     type: {
       type: String,
-      enum: ["nueva_solicitud", "confirmacion_cotizacion", "cambio_estado"],
+      enum: [
+        "nueva_solicitud",
+        "confirmacion_cotizacion",
+        "cotizacion_ia_lista",
+        "cotizacion_enviada",
+        "cambio_estado",
+        "respuesta_cliente",
+      ],
       required: [true, "El tipo de notificación es requerido"],
     },
     title: {
@@ -40,6 +47,11 @@ const NotificationSchema = new mongoose.Schema(
       kind: { type: String },
       quantity: { type: Number },
       requestDate: { type: Date },
+      aiAmount: { type: Number },
+      aiCurrency: { type: String },
+      breakdown: { type: String },
+      finalAmount: { type: Number },
+      finalCurrency: { type: String },
     },
   },
   { timestamps: true },
