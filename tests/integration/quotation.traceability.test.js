@@ -191,4 +191,43 @@ describe("QuotationController - Trazabilidad (HU2)", () => {
       expect(res.status).toHaveBeenCalledWith(200);
     });
   });
+
+  describe("updateStatus - sincronizar solicitud", () => {
+    it("mapea en_produccion a cotizada en la solicitud", async () => {
+      const req = {
+        params: { id: "q1" },
+        body: { status: "en_produccion" },
+        user: { id: "admin1", isAdmin: true },
+      };
+      const res = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+      };
+
+      QuotationDAO.read
+        .mockResolvedValueOnce({
+          _id: "q1",
+          solicitud: "s1",
+          status: "aceptada",
+        })
+        .mockResolvedValueOnce({
+          _id: "q1",
+          status: "en_produccion",
+        });
+
+      QuotationDAO.update.mockResolvedValue({});
+      SolicitudDAO.update.mockResolvedValue({});
+      NotificationService.notifyClientStatusChanged.mockResolvedValue({});
+
+      await QuotationController.updateStatus(req, res);
+
+      expect(SolicitudDAO.update).toHaveBeenCalledWith("s1", {
+        status: "cotizada",
+      });
+      expect(QuotationDAO.update).toHaveBeenCalledWith("q1", {
+        status: "en_produccion",
+      });
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+  });
 });
