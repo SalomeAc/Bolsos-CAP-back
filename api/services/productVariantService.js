@@ -1,5 +1,7 @@
+const mongoose = require("mongoose");
 const Product = require("../models/product");
 const ProductVariantDAO = require("../dao/productVariantDAO");
+const { stripCmSuffix } = require("../utils/dimensions");
 
 function cartesian(arrays) {
   return arrays.reduce(
@@ -67,12 +69,13 @@ function toPublicVariant(doc) {
     productId: doc.productId,
     color: doc.color,
     material: doc.material,
-    dimensions: doc.dimensions,
+    dimensions: stripCmSuffix(doc.dimensions) || doc.dimensions,
     totalPrice: resolveTotalPrice(doc),
     materialPrice: resolveMaterialPrice(doc),
     workHours: resolveWorkHours(doc),
     sku: doc.sku || "",
     stock: doc.stock ?? 0,
+    descriptionImagen: doc.descriptionImagen ?? null,
   };
 }
 
@@ -86,7 +89,9 @@ class ProductVariantService {
     }
 
     const colors = (product.color || []).filter(Boolean);
-    const dimensionsList = (product.dimensions || []).filter(Boolean);
+    const dimensionsList = (product.dimensions || [])
+      .filter(Boolean)
+      .map(stripCmSuffix);
     const materials = (product.materials || []).filter(Boolean);
 
     if (!colors.length || !dimensionsList.length || !materials.length) {
@@ -97,7 +102,8 @@ class ProductVariantService {
     let created = 0;
     let skipped = 0;
 
-    for (const [color, dimensions, material] of combos) {
+    for (const [color, dimensionsRaw, material] of combos) {
+      const dimensions = stripCmSuffix(dimensionsRaw);
       const existing = await ProductVariantDAO.findByProductAndSpecs(productId, {
         color,
         material,
@@ -180,7 +186,18 @@ class ProductVariantService {
       }
 
       let doc = null;
+      const descriptionImagen =
+        item.descriptionImagen !== undefined
+          ? item.descriptionImagen != null &&
+            String(item.descriptionImagen).trim() !== ""
+            ? String(item.descriptionImagen).trim()
+            : null
+          : undefined;
+
       const variantUpdate = { totalPrice, materialPrice, workHours };
+      if (descriptionImagen !== undefined) {
+        variantUpdate.descriptionImagen = descriptionImagen;
+      }
 
       if (item._id) {
         doc = await ProductVariantDAO.updatePricing(item._id, variantUpdate);
@@ -190,7 +207,7 @@ class ProductVariantService {
           {
             color: item.color,
             material: item.material,
-            dimensions: item.dimensions,
+            dimensions: stripCmSuffix(item.dimensions),
           },
         );
 
@@ -205,6 +222,30 @@ class ProductVariantService {
     }
 
     return updated;
+  }
+
+  async deleteVariantForProduct(productId, variantId) {
+    if (!productId || !variantId) {
+      throw new Error("Producto y variante son requeridos");
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(variantId)) {
+      throw new Error("ID de variante inválido");
+    }
+
+    const variant = await ProductVariantDAO.findOne({ _id: variantId });
+
+    if (!variant || String(variant.productId) !== String(productId)) {
+      throw new Error("Variante no encontrada para este producto");
+    }
+
+    const deleted = await ProductVariantDAO.deleteById(variantId);
+
+    if (!deleted) {
+      throw new Error("No se pudo eliminar la variante");
+    }
+
+    return toPublicVariant(deleted);
   }
 
   async findVariantForQuotation(productId, { color, material, dimensions }) {
