@@ -681,6 +681,27 @@ class NotificationService {
   }
 
   /**
+   * Notifica a cliente y admin cuando el cliente acepta o rechaza una cotización.
+   * @param {Object} quotation - Cotización poblada
+   * @param {"aceptada"|"rechazada"} decision
+   */
+  async notifyClientQuotationDecision(quotation, decision) {
+    if (!quotation?._id || !["aceptada", "rechazada"].includes(decision)) {
+      return;
+    }
+
+    await this.notifyClientResponseInChat(quotation, decision);
+    await this.notifyAdminClientResponse(quotation, { decision });
+    await this._notifyClientDecisionInApp(quotation, decision);
+
+    if (decision === "aceptada") {
+      await this.sendAcceptanceEmailToClient(quotation);
+    } else {
+      await this.sendRejectionEmailToClient(quotation);
+    }
+  }
+
+  /**
    * Notifica a la administradora cuando el cliente acepta, rechaza o propone un precio.
    * @param {Object} quotation - Cotización poblada
    * @param {Object} response - Datos de respuesta del cliente
@@ -812,10 +833,10 @@ class NotificationService {
       );
 
       if (decision === "aceptada") {
-        const thankYouMessage = `¡Gracias por tu pedido! Confirmamos la aceptación de ${productName} por ${amountText}. Te contactaremos pronto con los siguientes pasos.`;
+        const thankYouMessage = `¡Muchas gracias por aceptar tu cotización! Confirmamos tu pedido de ${productName} por ${amountText}. Te contactaremos pronto con los siguientes pasos.`;
         await this._createSystemMessage(quotation, thankYouMessage, [], "client");
 
-        const adminMessage = `${clientName} ha aceptado el pedido de ${productName} por ${amountText}.`;
+        const adminMessage = `${clientName} aceptó la cotización de ${productName} por ${amountText}.`;
         return await this._createSystemMessage(
           quotation,
           adminMessage,
@@ -825,10 +846,10 @@ class NotificationService {
       }
 
       if (decision === "rechazada") {
-        const clientMessage = `Hemos registrado tu respuesta sobre ${productName}. Si deseas una nueva cotización, puedes escribirnos aquí.`;
+        const clientMessage = `Gracias por tu respuesta. Hemos registrado que no deseas continuar con la cotización de ${productName}. Si cambias de opinión o quieres una nueva propuesta, puedes escribirnos aquí.`;
         await this._createSystemMessage(quotation, clientMessage, [], "client");
 
-        const adminMessage = `${clientName} rechazó el pedido de ${productName}.`;
+        const adminMessage = `${clientName} rechazó la cotización de ${productName}.`;
         return await this._createSystemMessage(
           quotation,
           adminMessage,
@@ -856,11 +877,14 @@ class NotificationService {
   /**
    * Envía correo de confirmación al cliente cuando acepta la cotización.
    * @param {Object} quotation - Cotización poblada
-   * @returns {Promise<void>}
+   * @returns {Promise<void|null>}
    */
   async sendAcceptanceEmailToClient(quotation) {
-    if (!quotation || !quotation.user || !quotation.user.email) {
-      throw new Error("Cotización debe tener usuario con email");
+    if (!quotation?.user?.email) {
+      console.warn(
+        "[NOTIFICATION] Sin email de cliente para confirmación de aceptación",
+      );
+      return null;
     }
 
     const clientName =
@@ -883,20 +907,123 @@ class NotificationService {
       <html>
         <head><meta charset="UTF-8"></head>
         <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
-          <h2>Tu pedido fue aceptado</h2>
+          <h2>¡Muchas gracias por tu pedido!</h2>
           <p>Hola ${clientName}, hemos registrado la aceptación de tu cotización para ${productName}.</p>
           <p><strong>Valor confirmado:</strong> ${amountText}</p>
-          <p><strong>Estado actual:</strong> ${this._getStatusLabel(quotation.status)}</p>
           <p>Te contactaremos con los siguientes pasos del pedido.</p>
         </body>
       </html>
     `;
 
-    await sendMail(
-      quotation.user.email,
-      "Confirmación de pedido aceptado",
-      html,
+    try {
+      await sendMail(
+        quotation.user.email,
+        "¡Muchas gracias! Tu pedido fue aceptado",
+        html,
+      );
+    } catch (emailErr) {
+      console.error(
+        `[NOTIFICATION] Error enviando email de aceptación a ${quotation.user.email}:`,
+        emailErr.message,
+      );
+    }
+
+    return null;
+  }
+
+  /**
+   * Envía correo al cliente cuando rechaza la cotización.
+   * @param {Object} quotation - Cotización poblada
+   * @returns {Promise<void|null>}
+   */
+  async sendRejectionEmailToClient(quotation) {
+    if (!quotation?.user?.email) {
+      console.warn(
+        "[NOTIFICATION] Sin email de cliente para confirmación de rechazo",
+      );
+      return null;
+    }
+
+    const clientName =
+      [quotation.user?.firstName, quotation.user?.lastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim() || "Cliente";
+    const productName =
+      quotation.kind === "catalog"
+        ? quotation.product?.name || "tu producto"
+        : quotation.customProduct?.description || "tu bolso personalizado";
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head><meta charset="UTF-8"></head>
+        <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+          <h2>Hemos registrado tu respuesta</h2>
+          <p>Hola ${clientName},</p>
+          <p>Gracias por informarnos. Hemos registrado que no deseas continuar con la cotización de ${productName}.</p>
+          <p>Si cambias de opinión o quieres una nueva propuesta, puedes escribirnos desde Mis Cotizaciones.</p>
+        </body>
+      </html>
+    `;
+
+    try {
+      await sendMail(
+        quotation.user.email,
+        "Respuesta registrada",
+        html,
+      );
+    } catch (emailErr) {
+      console.error(
+        `[NOTIFICATION] Error enviando email de rechazo a ${quotation.user.email}:`,
+        emailErr.message,
+      );
+    }
+
+    return null;
+  }
+
+  /**
+   * Notificación in-app al cliente tras aceptar o rechazar.
+   * @private
+   */
+  async _notifyClientDecisionInApp(quotation, decision) {
+    const recipientId = quotation.user?._id || quotation.user;
+    if (!recipientId) {
+      return null;
+    }
+
+    const productName = this._getClientProductLabel(quotation);
+    const amountText = this._formatCurrency(
+      quotation.finalQuotation?.amount,
+      quotation.finalQuotation?.currency || "COP",
     );
+
+    const title =
+      decision === "aceptada"
+        ? "¡Muchas gracias por tu pedido!"
+        : "Respuesta registrada";
+
+    const message =
+      decision === "aceptada"
+        ? `Confirmamos tu pedido de ${productName} por ${amountText}. Te contactaremos pronto.`
+        : `Hemos registrado que no deseas continuar con la cotización de ${productName}.`;
+
+    return await NotificationDAO.create({
+      type: "respuesta_cliente",
+      title,
+      message,
+      quotation: quotation._id,
+      solicitud: quotation.solicitud?._id || quotation.solicitud,
+      recipient: recipientId,
+      read: false,
+      metadata: {
+        productName,
+        kind: quotation.kind,
+        decision,
+        requestDate: new Date(),
+      },
+    });
   }
 
   _getClientProductLabel(quotation) {
@@ -904,7 +1031,7 @@ class NotificationService {
       return quotation.product?.name || "tu producto";
     }
 
-    return "tu bolso personalizado";
+    return quotation.customProduct?.description || "tu bolso personalizado";
   }
 
   _getStatusLabel(status) {
