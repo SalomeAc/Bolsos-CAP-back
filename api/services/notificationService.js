@@ -22,13 +22,17 @@ class NotificationService {
 
       console.log(
         `[NOTIFICATION] Iniciando notificación para cotización ${quotation._id}` +
-          (fromCotizarForm ? " (formulario Cotizar)" : "")
+          (fromCotizarForm ? " (formulario Cotizar)" : ""),
       );
 
       const content = this._buildNotificationContent(quotation);
 
       const messageContent = fromCotizarForm
-        ? this._buildCotizarFormSystemMessageContent(quotation, content, options)
+        ? this._buildCotizarFormSystemMessageContent(
+            quotation,
+            content,
+            options,
+          )
         : this._buildStandardSystemMessageContent(content);
 
       const attachments = fromCotizarForm
@@ -36,25 +40,37 @@ class NotificationService {
         : [];
 
       const emailHtml = fromCotizarForm
-        ? this._buildEmailTemplate(content, { ...options, fromCotizarForm: true })
+        ? this._buildEmailTemplate(content, {
+            ...options,
+            fromCotizarForm: true,
+          })
         : this._buildEmailTemplate(content);
 
       console.log(`[NOTIFICATION] Creando mensaje del sistema...`);
       const systemMessage = await this._createSystemMessage(
         quotation,
         messageContent,
-        attachments
+        attachments,
       );
-      console.log(`[NOTIFICATION] Mensaje del sistema creado: ${systemMessage._id}`);
+      console.log(
+        `[NOTIFICATION] Mensaje del sistema creado: ${systemMessage._id}`,
+      );
 
       console.log(`[NOTIFICATION] Enviando email a ${quotation.user.email}...`);
       await this._sendEmail(quotation.user.email, emailHtml);
-      console.log(`[NOTIFICATION] ✓ Email enviado exitosamente a ${quotation.user.email}`);
+      console.log(
+        `[NOTIFICATION] ✓ Email enviado exitosamente a ${quotation.user.email}`,
+      );
 
-      console.log(`[NOTIFICATION] ✓ Notificación completada para cotización ${quotation._id}`);
+      console.log(
+        `[NOTIFICATION] ✓ Notificación completada para cotización ${quotation._id}`,
+      );
       return systemMessage;
     } catch (err) {
-      console.error(`[NOTIFICATION ERROR] Error en sendQuotationConfirmation:`, err);
+      console.error(
+        `[NOTIFICATION ERROR] Error en sendQuotationConfirmation:`,
+        err,
+      );
       throw err;
     }
   }
@@ -72,20 +88,23 @@ class NotificationService {
       }
 
       const AdminUser = require("../models/user");
-      const admins = await AdminUser.find({ isAdmin: true, isActive: true }).lean();
+      const admins = await AdminUser.find({
+        isAdmin: true,
+        isActive: true,
+      }).lean();
 
       if (!admins.length) {
-        console.warn("[NOTIFICATION] No hay administradores activos para notificar");
+        console.warn(
+          "[NOTIFICATION] No hay administradores activos para notificar",
+        );
         return [];
       }
 
-      const clientName = [
-        quotation.user?.firstName,
-        quotation.user?.lastName,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .trim() || "Cliente";
+      const clientName =
+        [quotation.user?.firstName, quotation.user?.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim() || "Cliente";
 
       const productName =
         quotation.kind === "catalog"
@@ -106,7 +125,8 @@ class NotificationService {
           title,
           message,
           quotation: quotation._id,
-          solicitud: solicitud?._id || quotation.solicitud?._id || quotation.solicitud,
+          solicitud:
+            solicitud?._id || quotation.solicitud?._id || quotation.solicitud,
           recipient: admin._id,
           read: false,
           metadata: {
@@ -122,16 +142,22 @@ class NotificationService {
         const notification = await NotificationDAO.create(notificationData);
         notifications.push(notification);
         console.log(
-          `[NOTIFICATION] ✓ Notificación admin creada para ${admin.email}: ${notification._id}`
+          `[NOTIFICATION] ✓ Notificación admin creada para ${admin.email}: ${notification._id}`,
         );
 
         if (admin.email) {
           try {
-            await this._sendAdminEmail(admin.email, title, message, quotation, solicitudCode);
+            await this._sendAdminEmail(
+              admin.email,
+              title,
+              message,
+              quotation,
+              solicitudCode,
+            );
           } catch (emailErr) {
             console.error(
               `[NOTIFICATION] Error enviando email admin a ${admin.email}:`,
-              emailErr.message
+              emailErr.message,
             );
           }
         }
@@ -139,9 +165,707 @@ class NotificationService {
 
       return notifications;
     } catch (err) {
-      console.error(`[NOTIFICATION ERROR] Error en notifyAdminNewRequest:`, err);
+      console.error(
+        `[NOTIFICATION ERROR] Error en notifyAdminNewRequest:`,
+        err,
+      );
       throw err;
     }
+  }
+
+  /**
+   * Crea una notificación para el cliente cuando la solicitud fue recibida
+   * @param {Object} quotation - Cotización poblada
+   * @param {Object} solicitud - Solicitud asociada (opcional)
+   * @returns {Promise<Object|null>} Notificación creada o null si no aplica
+   */
+  async notifyClientQuotationReceived(quotation, solicitud = null) {
+    try {
+      if (!quotation || !quotation._id) {
+        throw new Error("Cotización requerida para notificar al cliente");
+      }
+
+      const recipientId = quotation.user?._id || quotation.user;
+      if (!recipientId) {
+        console.warn(
+          "[NOTIFICATION] No se encontró usuario para notificar recepción",
+        );
+        return null;
+      }
+
+      const clientName =
+        [quotation.user?.firstName, quotation.user?.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim() || "Cliente";
+      const productName =
+        quotation.kind === "catalog"
+          ? quotation.product?.name || "producto de catálogo"
+          : quotation.customProduct?.description || "bolso personalizado";
+      const solicitudCode = solicitud?.code || quotation.solicitud?.code;
+      const title = "Solicitud de cotización recibida";
+      const message = solicitudCode
+        ? `${clientName}, hemos recibido tu solicitud ${solicitudCode} para ${productName}.`
+        : `${clientName}, hemos recibido tu solicitud de cotización para ${productName}.`;
+
+      const notification = await NotificationDAO.create({
+        type: "confirmacion_cotizacion",
+        title,
+        message,
+        quotation: quotation._id,
+        solicitud:
+          solicitud?._id || quotation.solicitud?._id || quotation.solicitud,
+        recipient: recipientId,
+        read: false,
+        metadata: {
+          clientName,
+          productName,
+          kind: quotation.kind,
+          quantity: quotation.quantity || 1,
+          requestDate: quotation.createdAt || new Date(),
+        },
+      });
+
+      console.log(
+        `[NOTIFICATION] ✓ Notificación cliente creada: ${notification._id}`,
+      );
+      return notification;
+    } catch (err) {
+      console.error(
+        `[NOTIFICATION ERROR] Error en notifyClientQuotationReceived:`,
+        err,
+      );
+      throw err;
+    }
+  }
+
+  /**
+   * Notifica a la administradora que la propuesta de IA está lista para revisar.
+   * @param {Object} quotation - Cotización poblada con aiQuotation
+   * @returns {Promise<Array>}
+   */
+  async notifyAdminAiQuotationReady(quotation) {
+    try {
+      if (!quotation?.aiQuotation?.amount) {
+        return [];
+      }
+
+      if (await this._adminAiProposalChatExists(quotation._id)) {
+        return [];
+      }
+
+      const AdminUser = require("../models/user");
+      const admins = await AdminUser.find({
+        isAdmin: true,
+        isActive: true,
+      }).lean();
+
+      if (!admins.length) {
+        return [];
+      }
+
+      const clientName =
+        [quotation.user?.firstName, quotation.user?.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim() || "Cliente";
+      const productName =
+        quotation.kind === "catalog"
+          ? quotation.product?.name || "Producto de catálogo"
+          : quotation.customProduct?.description || "Bolso personalizado";
+      const amountText = this._formatCurrency(
+        quotation.aiQuotation.amount,
+        quotation.aiQuotation.currency || "COP",
+      );
+      const solicitudCode = quotation.solicitud?.code;
+      const title = "Cotización generada por IA";
+      const message = solicitudCode
+        ? `La IA sugirió ${amountText} para ${solicitudCode} (${productName}). Revisa y envía al cliente.`
+        : `La IA sugirió ${amountText} para la solicitud de ${clientName}: ${productName}.`;
+
+      const notifications = [];
+
+      for (const admin of admins) {
+        const notification = await NotificationDAO.create({
+          type: "cotizacion_ia_lista",
+          title,
+          message,
+          quotation: quotation._id,
+          solicitud: quotation.solicitud?._id || quotation.solicitud,
+          recipient: admin._id,
+          read: false,
+          metadata: {
+            clientName,
+            clientEmail: quotation.user?.email,
+            productName,
+            kind: quotation.kind,
+            quantity: quotation.quantity || 1,
+            requestDate: quotation.aiQuotation.generatedAt || new Date(),
+            aiAmount: quotation.aiQuotation.amount,
+            aiCurrency: quotation.aiQuotation.currency || "COP",
+            breakdown: quotation.aiQuotation.breakdown,
+          },
+        });
+
+        notifications.push(notification);
+
+        if (admin.email) {
+          try {
+            await this._sendAdminEmail(
+              admin.email,
+              title,
+              `${message}\n\nJustificación IA: ${quotation.aiQuotation.breakdown || "Sin detalle"}`,
+              quotation,
+              solicitudCode,
+            );
+          } catch (emailErr) {
+            console.error(
+              `[NOTIFICATION] Error enviando email IA admin a ${admin.email}:`,
+              emailErr.message,
+            );
+          }
+        }
+      }
+
+      await this._createSystemMessage(
+        quotation,
+        [
+          "Propuesta de cotización generada por IA",
+          "",
+          `Monto sugerido: ${amountText}`,
+          quotation.aiQuotation.breakdown
+            ? `Justificación: ${quotation.aiQuotation.breakdown}`
+            : "",
+          "",
+          "Revisa la propuesta y pulsa Aceptar o Modificar para enviarla al cliente.",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        [],
+        "admin",
+      );
+
+      return notifications;
+    } catch (err) {
+      console.error(
+        `[NOTIFICATION ERROR] Error en notifyAdminAiQuotationReady:`,
+        err,
+      );
+      throw err;
+    }
+  }
+
+  /**
+   * Avisa a la admin que no se pudo auto-cotizar un producto de catálogo
+   * (sin variante, precio en cero o datos incompletos).
+   * @param {Object} quotation - Cotización poblada
+   * @param {Object} solicitud - Solicitud asociada
+   * @param {{ reason: string, lookupSpecs?: object, totalPrice?: number }} autoQuoteResult
+   * @returns {Promise<Array>}
+   */
+  async notifyAdminCatalogAutoQuoteSkipped(
+    quotation,
+    solicitud = null,
+    autoQuoteResult = {},
+  ) {
+    try {
+      if (!quotation?._id || !autoQuoteResult?.reason) {
+        return [];
+      }
+
+      const AdminUser = require("../models/user");
+      const admins = await AdminUser.find({
+        isAdmin: true,
+        isActive: true,
+      }).lean();
+
+      if (!admins.length) {
+        return [];
+      }
+
+      const clientName =
+        [quotation.user?.firstName, quotation.user?.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim() || "Cliente";
+      const productName =
+        quotation.product?.name || "Producto de catálogo";
+      const solicitudCode = solicitud?.code || quotation.solicitud?.code;
+      const specs = autoQuoteResult.lookupSpecs || {};
+      const specsLine = [
+        specs.color && `Color: ${specs.color}`,
+        specs.material && `Material: ${specs.material}`,
+        specs.dimensions && `Dimensiones: ${specs.dimensions}`,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+
+      const reasonMessages = {
+        missing_specs:
+          "Faltan color, material o dimensiones en la solicitud del cliente.",
+        no_variant:
+          "No hay variante configurada en el catálogo para esa combinación.",
+        zero_price:
+          "La variante existe pero el precio total está en $0. Defina totalPrice en Variantes y precios.",
+      };
+      const reasonText =
+        reasonMessages[autoQuoteResult.reason] ||
+        "No hay información de precio suficiente para cotizar automáticamente.";
+
+      const title = "Cotización automática no enviada al cliente";
+      const message = solicitudCode
+        ? `${clientName} (${solicitudCode}): ${productName}. ${reasonText} Debe cotizar manualmente.`
+        : `${clientName}: ${productName}. ${reasonText} Debe cotizar manualmente.`;
+
+      const chatLines = [
+        "No se envió cotización automática al cliente.",
+        "",
+        `Cliente: ${clientName}`,
+        `Producto: ${productName}`,
+        solicitudCode ? `Solicitud: ${solicitudCode}` : "",
+        specsLine ? `Combinación: ${specsLine}` : "",
+        "",
+        `Motivo: ${reasonText}`,
+        autoQuoteResult.reason === "zero_price"
+          ? `Precio actual en variante: ${this._formatCurrency(autoQuoteResult.totalPrice ?? 0)}`
+          : "",
+        "",
+        "Revise Variantes y precios del producto o envíe la cotización manualmente desde el panel.",
+      ].filter(Boolean);
+
+      const notifications = [];
+
+      for (const admin of admins) {
+        const notification = await NotificationDAO.create({
+          type: "cotizacion_auto_pendiente",
+          title,
+          message,
+          quotation: quotation._id,
+          solicitud:
+            solicitud?._id || quotation.solicitud?._id || quotation.solicitud,
+          recipient: admin._id,
+          read: false,
+          metadata: {
+            clientName,
+            productName,
+            kind: quotation.kind,
+            autoQuoteReason: autoQuoteResult.reason,
+            lookupSpecs: specs,
+            totalPrice: autoQuoteResult.totalPrice ?? null,
+            quantity: quotation.quantity || 1,
+          },
+        });
+        notifications.push(notification);
+      }
+
+      await this._createSystemMessage(
+        quotation,
+        chatLines.join("\n"),
+        [],
+        "admin",
+      );
+
+      return notifications;
+    } catch (err) {
+      console.error(
+        `[NOTIFICATION ERROR] Error en notifyAdminCatalogAutoQuoteSkipped:`,
+        err,
+      );
+      throw err;
+    }
+  }
+
+  /**
+   * Notifica al cliente que la administradora envió la cotización final.
+   * @param {Object} quotation - Cotización poblada con finalQuotation
+   * @returns {Promise<Object|null>}
+   */
+  async notifyClientQuotationSent(quotation) {
+    try {
+      if (!quotation?.finalQuotation?.amount) {
+        return null;
+      }
+
+      const recipientId = quotation.user?._id || quotation.user;
+      if (!recipientId) {
+        return null;
+      }
+
+      const clientName =
+        [quotation.user?.firstName, quotation.user?.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim() || "Cliente";
+      const productName = this._getClientProductLabel(quotation);
+      const amountText = this._formatCurrency(
+        quotation.finalQuotation.amount,
+        quotation.finalQuotation.currency || "COP",
+      );
+      const title = "Tu cotización está lista";
+      const message = `La cotización de ${productName} es ${amountText}.`;
+      const clientChatMessage = `${message} ¿La aceptas?`;
+
+      const notification = await NotificationDAO.create({
+        type: "cotizacion_enviada",
+        title,
+        message,
+        quotation: quotation._id,
+        solicitud: quotation.solicitud?._id || quotation.solicitud,
+        recipient: recipientId,
+        read: false,
+        metadata: {
+          clientName,
+          productName,
+          kind: quotation.kind,
+          quantity: quotation.quantity || 1,
+          requestDate: quotation.finalQuotation.quotedAt || new Date(),
+          finalAmount: quotation.finalQuotation.amount,
+          finalCurrency: quotation.finalQuotation.currency || "COP",
+        },
+      });
+
+      await this._createSystemMessage(
+        quotation,
+        clientChatMessage,
+        [],
+        "client",
+        { messageType: "quotation_offer" },
+      );
+
+      await this.notifyAdminFinalQuotationSent(quotation);
+
+      if (quotation.user?.email) {
+        try {
+          const html = `
+          <!DOCTYPE html>
+          <html>
+            <head><meta charset="UTF-8"></head>
+            <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+              <h2>${title}</h2>
+              <p>Hola ${clientName},</p>
+              <p>${message}</p>
+              <p>Puedes responder desde Mis Cotizaciones.</p>
+            </body>
+          </html>
+        `;
+          await sendMail(quotation.user.email, title, html);
+        } catch (emailErr) {
+          console.error(
+            `[NOTIFICATION] Error enviando email cotización al cliente ${quotation.user.email}:`,
+            emailErr.message,
+          );
+        }
+      }
+
+      return notification;
+    } catch (err) {
+      console.error(
+        `[NOTIFICATION ERROR] Error en notifyClientQuotationSent:`,
+        err,
+      );
+      throw err;
+    }
+  }
+
+  /**
+   * Crea una notificación para el cliente cuando cambia el estado del pedido
+   * @param {Object} quotation - Cotización poblada
+   * @param {string} previousStatus - Estado anterior
+   * @param {string} nextStatus - Nuevo estado
+   * @returns {Promise<Object|null>} Notificación creada o null si no aplica
+   */
+  async notifyClientStatusChanged(quotation, previousStatus, nextStatus) {
+    try {
+      if (!quotation || !quotation._id) {
+        throw new Error("Cotización requerida para notificar cambio de estado");
+      }
+
+      const recipientId = quotation.user?._id || quotation.user;
+      const productName =
+        quotation.kind === "catalog"
+          ? quotation.product?.name || "tu producto"
+          : quotation.customProduct?.description || "tu bolso personalizado";
+      if (!recipientId) {
+        console.warn(
+          "[NOTIFICATION] No se encontró usuario para notificar cambio de estado",
+        );
+        return null;
+      }
+
+      const title = "Actualización del estado de tu pedido";
+      const previousLabel = this._getStatusLabel(previousStatus);
+      const nextLabel = this._getStatusLabel(nextStatus);
+      const message = `El estado de tu solicitud de "${productName}" cambió de ${previousLabel} a ${nextLabel}.`;
+
+      const notification = await NotificationDAO.create({
+        type: "cambio_estado",
+        title,
+        message,
+        quotation: quotation._id,
+        solicitud: quotation.solicitud?._id || quotation.solicitud,
+        recipient: recipientId,
+        read: false,
+        metadata: {
+          previousStatus,
+          nextStatus,
+          requestDate: quotation.updatedAt || new Date(),
+        },
+      });
+
+      console.log(
+        `[NOTIFICATION] ✓ Notificación de estado creada: ${notification._id}`,
+      );
+      return notification;
+    } catch (err) {
+      console.error(
+        `[NOTIFICATION ERROR] Error en notifyClientStatusChanged:`,
+        err,
+      );
+      throw err;
+    }
+  }
+
+  /**
+   * Notifica a la administradora cuando el cliente acepta, rechaza o propone un precio.
+   * @param {Object} quotation - Cotización poblada
+   * @param {Object} response - Datos de respuesta del cliente
+   * @returns {Promise<Array>} Notificaciones creadas para cada admin
+   */
+  async notifyAdminClientResponse(quotation, response = {}) {
+    try {
+      if (!quotation || !quotation._id) {
+        throw new Error(
+          "Cotización requerida para notificar respuesta del cliente",
+        );
+      }
+
+      const AdminUser = require("../models/user");
+      const admins = await AdminUser.find({ isAdmin: true, isActive: true }).lean();
+
+      if (!admins.length) {
+        console.warn(
+          "[NOTIFICATION] No hay administradores activos para notificar respuesta del cliente",
+        );
+        return [];
+      }
+
+      const clientName =
+        [quotation.user?.firstName, quotation.user?.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim() || "Cliente";
+      const productName =
+        quotation.kind === "catalog"
+          ? quotation.product?.name || "Producto de catálogo"
+          : quotation.customProduct?.description || "Bolso personalizado";
+
+      const decision =
+        response.decision || quotation.clientResponse?.decision || "propuesta";
+      const proposedAmount =
+        response.proposedAmount ?? quotation.clientResponse?.proposedAmount;
+      const currency = response.currency || quotation.clientResponse?.currency || "COP";
+      const amountText = this._formatCurrency(proposedAmount, currency);
+
+      const title =
+        decision === "aceptada"
+          ? "El cliente aceptó la cotización"
+          : decision === "rechazada"
+            ? "El cliente rechazó la cotización"
+            : "El cliente propuso un nuevo precio";
+
+      const message =
+        decision === "aceptada"
+          ? `${clientName} aceptó la cotización de ${productName}.`
+          : decision === "rechazada"
+            ? `${clientName} rechazó la cotización de ${productName}.`
+            : `${clientName} propuso ${amountText} para ${productName}.`;
+
+      const notifications = [];
+
+      for (const admin of admins) {
+        const notification = await NotificationDAO.create({
+          type: "respuesta_cliente",
+          title,
+          message,
+          quotation: quotation._id,
+          solicitud: quotation.solicitud?._id || quotation.solicitud,
+          recipient: admin._id,
+          read: false,
+          metadata: {
+            clientName,
+            clientEmail: quotation.user?.email,
+            productName,
+            kind: quotation.kind,
+            quantity: quotation.quantity || 1,
+            requestDate: quotation.createdAt || new Date(),
+          },
+        });
+
+        notifications.push(notification);
+
+        if (admin.email) {
+          try {
+            await this._sendAdminEmail(
+              admin.email,
+              title,
+              `${message}${
+                proposedAmount != null ? `\n\nPrecio propuesto: ${amountText}` : ""
+              }`,
+              quotation,
+              quotation.solicitud?.code || quotation.solicitud?._id?.toString?.() || quotation.solicitud,
+            );
+          } catch (emailErr) {
+            console.error(
+              `[NOTIFICATION] Error enviando email admin a ${admin.email}:`,
+              emailErr.message,
+            );
+          }
+        }
+      }
+
+      return notifications;
+    } catch (err) {
+      console.error(
+        `[NOTIFICATION ERROR] Error en notifyAdminClientResponse:`,
+        err,
+      );
+      throw err;
+    }
+  }
+
+  /**
+   * Registra en el chat la respuesta del cliente (aceptar/rechazar).
+   * @param {Object} quotation - Cotización poblada
+   * @param {"aceptada"|"rechazada"|"propuesta"} decision
+   * @returns {Promise<Object|null>}
+   */
+  async notifyClientResponseInChat(quotation, decision) {
+    try {
+      if (!quotation?._id) {
+        return null;
+      }
+
+      const clientName =
+        [quotation.user?.firstName, quotation.user?.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim() || "El cliente";
+      const productName = this._getClientProductLabel(quotation);
+      const amountText = this._formatCurrency(
+        quotation.finalQuotation?.amount,
+        quotation.finalQuotation?.currency || "COP",
+      );
+
+      if (decision === "aceptada") {
+        const thankYouMessage = `¡Gracias por tu pedido! Confirmamos la aceptación de ${productName} por ${amountText}. Te contactaremos pronto con los siguientes pasos.`;
+        await this._createSystemMessage(quotation, thankYouMessage, [], "client");
+
+        const adminMessage = `${clientName} ha aceptado el pedido de ${productName} por ${amountText}.`;
+        return await this._createSystemMessage(
+          quotation,
+          adminMessage,
+          [],
+          "admin",
+        );
+      }
+
+      if (decision === "rechazada") {
+        const clientMessage = `Hemos registrado tu respuesta sobre ${productName}. Si deseas una nueva cotización, puedes escribirnos aquí.`;
+        await this._createSystemMessage(quotation, clientMessage, [], "client");
+
+        const adminMessage = `${clientName} rechazó el pedido de ${productName}.`;
+        return await this._createSystemMessage(
+          quotation,
+          adminMessage,
+          [],
+          "admin",
+        );
+      }
+
+      const proposed = this._formatCurrency(
+        quotation.clientResponse?.proposedAmount,
+        quotation.clientResponse?.currency || "COP",
+      );
+      const chatMessage = `${clientName} propuso un nuevo precio de ${proposed} para ${productName}.`;
+
+      return await this._createSystemMessage(quotation, chatMessage, [], "all");
+    } catch (err) {
+      console.error(
+        `[NOTIFICATION ERROR] Error en notifyClientResponseInChat:`,
+        err,
+      );
+      throw err;
+    }
+  }
+
+  /**
+   * Envía correo de confirmación al cliente cuando acepta la cotización.
+   * @param {Object} quotation - Cotización poblada
+   * @returns {Promise<void>}
+   */
+  async sendAcceptanceEmailToClient(quotation) {
+    if (!quotation || !quotation.user || !quotation.user.email) {
+      throw new Error("Cotización debe tener usuario con email");
+    }
+
+    const clientName =
+      [quotation.user?.firstName, quotation.user?.lastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim() || "Cliente";
+    const productName =
+      quotation.kind === "catalog"
+        ? quotation.product?.name || "tu producto"
+        : quotation.customProduct?.description || "tu bolso personalizado";
+
+    const amount = quotation.finalQuotation?.amount ?? quotation.aiQuotation?.amount;
+    const currency =
+      quotation.finalQuotation?.currency || quotation.aiQuotation?.currency || "COP";
+    const amountText = this._formatCurrency(amount, currency);
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head><meta charset="UTF-8"></head>
+        <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+          <h2>Tu pedido fue aceptado</h2>
+          <p>Hola ${clientName}, hemos registrado la aceptación de tu cotización para ${productName}.</p>
+          <p><strong>Valor confirmado:</strong> ${amountText}</p>
+          <p><strong>Estado actual:</strong> ${this._getStatusLabel(quotation.status)}</p>
+          <p>Te contactaremos con los siguientes pasos del pedido.</p>
+        </body>
+      </html>
+    `;
+
+    await sendMail(
+      quotation.user.email,
+      "Confirmación de pedido aceptado",
+      html,
+    );
+  }
+
+  _getClientProductLabel(quotation) {
+    if (quotation?.kind === "catalog") {
+      return quotation.product?.name || "tu producto";
+    }
+
+    return "tu bolso personalizado";
+  }
+
+  _getStatusLabel(status) {
+    const labels = {
+      pendiente: "pendiente",
+      cotizada_ia: "cotizada (IA)",
+      en_revision: "en revisión",
+      cotizada: "cotizada",
+      aceptada: "aceptada",
+      rechazada: "rechazada",
+      en_produccion: "en producción",
+      completada: "completada",
+      cancelada: "cancelada",
+    };
+
+    return labels[status] || status || "sin estado";
   }
 
   /**
@@ -169,13 +893,16 @@ class NotificationService {
    * @private
    */
   _buildNotificationContent(quotation) {
-    const requestDate = new Date(quotation.createdAt).toLocaleDateString("es-CO", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    const requestDate = new Date(quotation.createdAt).toLocaleDateString(
+      "es-CO",
+      {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      },
+    );
 
     let bagType, bagName, material, dimensions, color;
 
@@ -183,13 +910,21 @@ class NotificationService {
       bagType = quotation.product.type || "No especificado";
       bagName = quotation.product.name || "No especificado";
       material = quotation.customization?.material || "No especificado";
-      dimensions = quotation.customization?.size || quotation.product.dimensions?.join(", ") || "No especificado";
-      color = quotation.customization?.color || quotation.product.color?.join(", ") || "No especificado";
+      dimensions =
+        quotation.customization?.size ||
+        quotation.product.dimensions?.join(", ") ||
+        "No especificado";
+      color =
+        quotation.customization?.color ||
+        quotation.product.color?.join(", ") ||
+        "No especificado";
     } else if (quotation.kind === "custom" && quotation.customProduct) {
       const cp = quotation.customProduct;
       bagType = "Personalizado";
       bagName = cp.description || "Sin nombre";
-      material = Array.isArray(cp.materials) ? cp.materials.join(", ") : cp.materials || "No especificado";
+      material = Array.isArray(cp.materials)
+        ? cp.materials.join(", ")
+        : cp.materials || "No especificado";
       dimensions = cp.dimensions || "No especificado";
       color = cp.color || "No especificado";
     } else {
@@ -212,8 +947,15 @@ class NotificationService {
    * @private
    */
   _buildStandardSystemMessageContent(content) {
-    const { bagType, bagName, material, dimensions, color, requestDate, status } =
-      content;
+    const {
+      bagType,
+      bagName,
+      material,
+      dimensions,
+      color,
+      requestDate,
+      status,
+    } = content;
 
     return [
       "Cotización Registrada Correctamente",
@@ -242,9 +984,7 @@ class NotificationService {
     const { material, dimensions, color, requestDate, status } = content;
 
     const observaciones =
-      options.observaciones?.trim() ||
-      quotation.notes?.trim() ||
-      "";
+      options.observaciones?.trim() || quotation.notes?.trim() || "";
 
     const lines = [
       "Cotización Registrada Correctamente",
@@ -277,10 +1017,7 @@ class NotificationService {
    * @private
    */
   _resolveCotizarFormAttachments(quotation, options = {}) {
-    const photoUrl =
-      options.photoUrl ||
-      quotation.customProduct?.photo ||
-      null;
+    const photoUrl = options.photoUrl || quotation.customProduct?.photo || null;
 
     return photoUrl ? [photoUrl] : [];
   }
@@ -290,8 +1027,15 @@ class NotificationService {
    * @private
    */
   _buildEmailTemplate(content, options = {}) {
-    const { bagType, bagName, material, dimensions, color, requestDate, status } =
-      content;
+    const {
+      bagType,
+      bagName,
+      material,
+      dimensions,
+      color,
+      requestDate,
+      status,
+    } = content;
 
     const fromCotizarForm = options.fromCotizarForm === true;
     const observaciones = options.observaciones?.trim() || "";
@@ -362,21 +1106,81 @@ class NotificationService {
   }
 
   /**
+   * Avisa a la admin (solo chat) que la cotización final ya fue enviada al cliente.
+   * No incluye criterios ni justificación de IA.
+   * @param {Object} quotation - Cotización poblada con finalQuotation
+   * @returns {Promise<Object|null>}
+   */
+  async notifyAdminFinalQuotationSent(quotation) {
+    if (!quotation?.finalQuotation?.amount) {
+      return null;
+    }
+
+    const clientName =
+      [quotation.user?.firstName, quotation.user?.lastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim() || "Cliente";
+    const adminProductName =
+      quotation.kind === "catalog"
+        ? quotation.product?.name || "producto de catálogo"
+        : quotation.customProduct?.description || "bolso personalizado";
+    const amountText = this._formatCurrency(
+      quotation.finalQuotation.amount,
+      quotation.finalQuotation.currency || "COP",
+    );
+    const adminChatMessage = `${clientName} ha recibido la cotización de ${adminProductName} por ${amountText}.`;
+
+    return await this._createSystemMessage(
+      quotation,
+      adminChatMessage,
+      [],
+      "admin",
+    );
+  }
+
+  /**
+   * @private
+   */
+  async _adminAiProposalChatExists(quotationId) {
+    const Message = require("../models/message");
+    const count = await Message.countDocuments({
+      quotation: quotationId,
+      audience: "admin",
+      content: /^Propuesta de cotización generada por IA/m,
+    });
+    return count > 0;
+  }
+
+  /**
    * Crea mensaje del sistema en la plataforma
    * @private
    */
-  async _createSystemMessage(quotation, messageContent, attachments = []) {
+  async _createSystemMessage(
+    quotation,
+    messageContent,
+    attachments = [],
+    audience = "all",
+    options = {},
+  ) {
     const AdminUser = require("../models/user");
     const adminUser = await AdminUser.findOne({ isAdmin: true }).lean();
     const senderId = adminUser?._id || quotation.user._id;
 
-    return await MessageDAO.create({
+    const payload = {
       quotation: quotation._id,
       sender: senderId,
       content: messageContent,
       isSystemMessage: true,
+      audience,
       attachments: attachments || [],
-    });
+    };
+
+    if (options.messageType) {
+      payload.messageType = options.messageType;
+    }
+
+    return await MessageDAO.create(payload);
   }
 
   /**
@@ -387,7 +1191,23 @@ class NotificationService {
     if (!userEmail) {
       throw new Error("Email del usuario requerido");
     }
-    await sendMail(userEmail, "Cotización Registrada Correctamente", htmlContent);
+    await sendMail(
+      userEmail,
+      "Cotización Registrada Correctamente",
+      htmlContent,
+    );
+  }
+
+  _formatCurrency(amount, currency = "COP") {
+    if (amount == null || Number.isNaN(Number(amount))) {
+      return "Pendiente de definir";
+    }
+
+    return new Intl.NumberFormat("es-CO", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 0,
+    }).format(Number(amount));
   }
 }
 

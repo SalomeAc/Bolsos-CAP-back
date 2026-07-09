@@ -26,6 +26,30 @@ class GlobalDAO {
     return updatedDocument;
   }
 
+  async patch(id, fields) {
+    const updatedDocument = await this.model.findByIdAndUpdate(
+      id,
+      { $set: fields },
+      {
+        new: true,
+        runValidators: true,
+      },
+    );
+    return updatedDocument;
+  }
+
+  async unset(id, fields) {
+    const updatedDocument = await this.model.findByIdAndUpdate(
+      id,
+      { $unset: fields },
+      {
+        new: true,
+        runValidators: true,
+      },
+    );
+    return updatedDocument;
+  }
+
   
   async delete(id) {
     const deletedDocument = await this.model.findByIdAndDelete(id);
