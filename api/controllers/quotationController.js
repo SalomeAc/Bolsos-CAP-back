@@ -1230,23 +1230,17 @@ class QuotationController extends GlobalController {
 
       const populatedQuotation = await this.dao.read(req.params.id);
 
-      if (decision === "aceptada") {
-        await NotificationService.sendAcceptanceEmailToClient(populatedQuotation);
+      try {
+        await NotificationService.notifyClientQuotationDecision(
+          populatedQuotation,
+          decision,
+        );
+      } catch (notifyErr) {
+        console.error(
+          `[QUOTATION] Error notificando respuesta del cliente ${req.params.id}:`,
+          notifyErr.message,
+        );
       }
-
-      await NotificationService.notifyAdminClientResponse(populatedQuotation, {
-        decision,
-      });
-      await NotificationService.notifyClientResponseInChat(
-        populatedQuotation,
-        decision,
-      );
-
-      await NotificationService.notifyClientStatusChanged(
-        populatedQuotation,
-        quotation.status,
-        decision,
-      );
 
       return res.status(200).json(this._sanitizeQuotationForClient(populatedQuotation));
     } catch (err) {
