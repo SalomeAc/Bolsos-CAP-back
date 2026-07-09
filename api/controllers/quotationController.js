@@ -335,6 +335,24 @@ class QuotationController extends GlobalController {
   }
 
   /**
+   * La solicitud solo admite pendiente | cotizada | cancelada.
+   * @private
+   */
+  _mapQuotationStatusForSolicitud(quotationStatus) {
+    if (quotationStatus === "cancelada" || quotationStatus === "rechazada") {
+      return "cancelada";
+    }
+    if (
+      ["cotizada", "aceptada", "en_produccion", "completada"].includes(
+        quotationStatus,
+      )
+    ) {
+      return "cotizada";
+    }
+    return "pendiente";
+  }
+
+  /**
    * Oculta la propuesta IA al cliente hasta que la admin envíe finalQuotation.
    * @private
    */
@@ -1276,7 +1294,9 @@ class QuotationController extends GlobalController {
             quotation.solicitud?._id?.toString() ||
             quotation.solicitud?.toString() ||
             quotation.solicitud;
-          await SolicitudDAO.update(solicitudId, { status });
+          await SolicitudDAO.update(solicitudId, {
+            status: this._mapQuotationStatusForSolicitud(status),
+          });
         }
 
         await NotificationService.notifyClientStatusChanged(

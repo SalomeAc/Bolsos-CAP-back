@@ -11,6 +11,11 @@ jest.mock("../../api/models/user", () => ({
   findOne: jest.fn().mockReturnValue({
     lean: jest.fn().mockResolvedValue({ _id: "admin1", isAdmin: true }),
   }),
+  find: jest.fn().mockReturnValue({
+    lean: jest.fn().mockResolvedValue([
+      { _id: "admin1", email: "admin@example.com", isAdmin: true, isActive: true },
+    ]),
+  }),
 }));
 
 describe("NotificationService", () => {
@@ -323,6 +328,8 @@ describe("NotificationService", () => {
         kind: "catalog",
         user: {
           _id: "user-status",
+          firstName: "Ana",
+          lastName: "López",
           email: "cliente@example.com",
         },
         product: {
@@ -333,6 +340,7 @@ describe("NotificationService", () => {
       };
 
       NotificationDAO.create.mockResolvedValue({ _id: "notif-status" });
+      MessageDAO.create.mockResolvedValue({ _id: "msg-status" });
       sendMail.mockResolvedValue(true);
 
       await NotificationService.notifyClientStatusChanged(
@@ -346,8 +354,45 @@ describe("NotificationService", () => {
           type: "cambio_estado",
           recipient: "user-status",
           title: expect.stringContaining("estado"),
-          message: expect.stringContaining("en revisión"),
+          message: expect.stringContaining("En revisión"),
         }),
+      );
+      expect(MessageDAO.create).toHaveBeenCalledTimes(2);
+      expect(MessageDAO.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          quotation: "quotation-status",
+          isSystemMessage: true,
+          audience: "client",
+          content: expect.stringContaining("En revisión"),
+        }),
+      );
+      expect(MessageDAO.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          quotation: "quotation-status",
+          isSystemMessage: true,
+          audience: "admin",
+          content: expect.stringContaining("El cliente Ana López fue notificado"),
+        }),
+      );
+      expect(NotificationDAO.create).toHaveBeenCalledTimes(2);
+      expect(NotificationDAO.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "cambio_estado",
+          recipient: "user-status",
+        }),
+      );
+      expect(NotificationDAO.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "cambio_estado",
+          recipient: "admin1",
+          title: "Cliente notificado del cambio de estado",
+          message: expect.stringContaining("El cliente Ana López fue notificado"),
+        }),
+      );
+      expect(sendMail).toHaveBeenCalledWith(
+        "cliente@example.com",
+        expect.stringContaining("estado"),
+        expect.stringContaining("En revisión"),
       );
     });
   });

@@ -596,6 +596,11 @@ class NotificationService {
       const previousLabel = this._getStatusLabel(previousStatus);
       const nextLabel = this._getStatusLabel(nextStatus);
       const message = `El estado de tu solicitud de "${productName}" cambió de ${previousLabel} a ${nextLabel}.`;
+      const clientName =
+        [quotation.user?.firstName, quotation.user?.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim() || "Cliente";
 
       const notification = await NotificationDAO.create({
         type: "cambio_estado",
@@ -611,6 +616,56 @@ class NotificationService {
           requestDate: quotation.updatedAt || new Date(),
         },
       });
+
+      await this._createSystemMessage(quotation, message, [], "client");
+
+      const adminMessage = `El cliente ${clientName} fue notificado del cambio de estado: de ${previousLabel} a ${nextLabel}.`;
+      await this._createSystemMessage(quotation, adminMessage, [], "admin");
+
+      const AdminUser = require("../models/user");
+      const admins = await AdminUser.find({ isAdmin: true, isActive: true }).lean();
+      for (const admin of admins) {
+        await NotificationDAO.create({
+          type: "cambio_estado",
+          title: "Cliente notificado del cambio de estado",
+          message: adminMessage,
+          quotation: quotation._id,
+          solicitud: quotation.solicitud?._id || quotation.solicitud,
+          recipient: admin._id,
+          read: false,
+          metadata: {
+            previousStatus,
+            nextStatus,
+            clientName,
+            clientEmail: quotation.user?.email,
+            productName,
+            requestDate: quotation.updatedAt || new Date(),
+          },
+        });
+      }
+
+      if (quotation.user?.email) {
+        try {
+          const html = `
+          <!DOCTYPE html>
+          <html>
+            <head><meta charset="UTF-8"></head>
+            <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+              <h2>${title}</h2>
+              <p>Hola ${clientName},</p>
+              <p>${message}</p>
+              <p>Puedes ver el detalle y escribirnos desde Mis Cotizaciones.</p>
+            </body>
+          </html>
+        `;
+          await sendMail(quotation.user.email, title, html);
+        } catch (emailErr) {
+          console.error(
+            `[NOTIFICATION] Error enviando email de cambio de estado a ${quotation.user.email}:`,
+            emailErr.message,
+          );
+        }
+      }
 
       console.log(
         `[NOTIFICATION] ✓ Notificación de estado creada: ${notification._id}`,
@@ -854,18 +909,20 @@ class NotificationService {
 
   _getStatusLabel(status) {
     const labels = {
-      pendiente: "pendiente",
-      cotizada_ia: "cotizada (IA)",
-      en_revision: "en revisión",
-      cotizada: "cotizada",
-      aceptada: "aceptada",
-      rechazada: "rechazada",
-      en_produccion: "en producción",
-      completada: "completada",
-      cancelada: "cancelada",
+      pendiente: "Pendiente",
+      cotizada_ia: "Cotizada (IA)",
+      en_revision: "En revisión",
+      cotizada: "Cotizada",
+      aceptada: "Aceptada",
+      rechazada: "Rechazada",
+      en_produccion: "En producción",
+      completada: "Completada",
+      cancelada: "Cancelada",
     };
 
-    return labels[status] || status || "sin estado";
+    if (labels[status]) return labels[status];
+    if (!status) return "Sin estado";
+    return String(status).replace(/_/g, " ");
   }
 
   /**
