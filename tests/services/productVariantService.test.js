@@ -11,6 +11,7 @@ jest.mock("../../api/dao/productVariantDAO", () => ({
   create: jest.fn(),
   updateById: jest.fn(),
   findByProductAndSpecs: jest.fn(),
+  deleteById: jest.fn(),
 }));
 
 const ProductVariantDAO = require("../../api/dao/productVariantDAO");
@@ -76,6 +77,65 @@ describe("ProductVariantService", () => {
       });
 
       expect(variant).toBeNull();
+    });
+  });
+
+  describe("deleteVariantForProduct", () => {
+    const productId = "507f1f77bcf86cd799439011";
+    const variantId = "507f1f77bcf86cd799439012";
+
+    it("elimina una variante que pertenece al producto", async () => {
+      ProductVariantDAO.findOne.mockResolvedValue({
+        _id: variantId,
+        productId,
+        color: "Negro",
+        material: "Algodón",
+        dimensions: "26 x 22 x 8",
+        totalPrice: 150000,
+        materialPrice: 40000,
+        workHours: 6,
+        sku: "PRD-negro-algodon-26x22x8",
+        stock: 0,
+      });
+      ProductVariantDAO.deleteById.mockResolvedValue({
+        _id: variantId,
+        productId,
+        color: "Negro",
+        material: "Algodón",
+        dimensions: "26 x 22 x 8",
+        totalPrice: 150000,
+        materialPrice: 40000,
+        workHours: 6,
+        sku: "PRD-negro-algodon-26x22x8",
+        stock: 0,
+      });
+
+      const deleted = await ProductVariantService.deleteVariantForProduct(
+        productId,
+        variantId,
+      );
+
+      expect(ProductVariantDAO.findOne).toHaveBeenCalledWith({
+        _id: variantId,
+      });
+      expect(ProductVariantDAO.deleteById).toHaveBeenCalledWith(variantId);
+      expect(deleted).toEqual(
+        expect.objectContaining({
+          _id: variantId,
+          totalPrice: 150000,
+        }),
+      );
+    });
+
+    it("lanza error si la variante no pertenece al producto", async () => {
+      ProductVariantDAO.findOne.mockResolvedValue(null);
+
+      await expect(
+        ProductVariantService.deleteVariantForProduct(
+          productId,
+          "507f1f77bcf86cd799439099",
+        ),
+      ).rejects.toThrow("Variante no encontrada para este producto");
     });
   });
 });

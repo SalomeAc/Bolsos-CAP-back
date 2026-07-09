@@ -1,6 +1,6 @@
 const productDAO = require("../dao/productDAO");
 const Product = require("../models/product");
-const ProductVariantService = require("../services/productVariantService");
+const { stripCmFromList, stripCmSuffix } = require("../utils/dimensions");
 
 const toArray = (value) => {
   if (!value) return [];
@@ -27,20 +27,30 @@ const normalizeProduct = (product) => {
   return {
     ...plainProduct,
     color: toArray(plainProduct.color || plainProduct.colors),
-    dimensions: toArray(plainProduct.dimensions || plainProduct.dimension),
+    dimensions: stripCmFromList(
+      toArray(plainProduct.dimensions || plainProduct.dimension),
+    ),
     materials: toArray(plainProduct.materials),
   };
 };
 
+const sanitizeProductBody = (body = {}) => {
+  const data = { ...body };
+
+  if (data.dimensions !== undefined) {
+    data.dimensions = stripCmFromList(toArray(data.dimensions));
+  }
+
+  if (typeof data.dimension === "string") {
+    data.dimension = stripCmSuffix(data.dimension);
+  }
+
+  return data;
+};
+
 const createProduct = async (req, res) => {
   try {
-    const product = await productDAO.createProduct(req.body);
-    await ProductVariantService.syncVariantsForProduct(product._id).catch((err) => {
-      console.warn(
-        `[PRODUCT] No se pudieron sincronizar variantes para ${product._id}:`,
-        err.message,
-      );
-    });
+    const product = await productDAO.createProduct(sanitizeProductBody(req.body));
 
     res.status(201).json(normalizeProduct(product));
   } catch (error) {
@@ -84,7 +94,7 @@ const updateProduct = async (req, res) => {
   try {
     const updatedProduct = await Product.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      sanitizeProductBody(req.body),
       {
         new: true,
         runValidators: true,
@@ -96,15 +106,6 @@ const updateProduct = async (req, res) => {
         error: "Producto no encontrado",
       });
     }
-
-    await ProductVariantService.syncVariantsForProduct(updatedProduct._id).catch(
-      (err) => {
-        console.warn(
-          `[PRODUCT] No se pudieron sincronizar variantes para ${updatedProduct._id}:`,
-          err.message,
-        );
-      },
-    );
 
     res.json(normalizeProduct(updatedProduct));
   } catch (error) {

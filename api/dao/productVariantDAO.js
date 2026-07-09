@@ -22,11 +22,20 @@ class ProductVariantDAO {
     }).lean();
   }
 
-  async updatePricing(id, { totalPrice, materialPrice, workHours }) {
+  async updatePricing(id, { totalPrice, materialPrice, workHours, descriptionImagen }) {
+    const $set = { totalPrice, materialPrice, workHours };
+
+    if (descriptionImagen !== undefined) {
+      $set.descriptionImagen =
+        descriptionImagen != null && String(descriptionImagen).trim() !== ""
+          ? String(descriptionImagen).trim()
+          : null;
+    }
+
     return ProductVariant.findByIdAndUpdate(
       id,
       {
-        $set: { totalPrice, materialPrice, workHours },
+        $set,
         $unset: {
           price: "",
           precio_total: "",
@@ -48,6 +57,10 @@ class ProductVariantDAO {
       material,
       dimensions,
     }).lean();
+  }
+
+  async deleteById(id) {
+    return ProductVariant.findByIdAndDelete(id).lean();
   }
 }
 

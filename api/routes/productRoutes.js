@@ -10,6 +10,12 @@ const requireAdmin = require("../middlewares/requireAdmin");
 router.get("/", productController.getProducts);
 router.get("/:productId/variants", authenticateToken, requireAdmin, productVariantController.listVariants);
 router.put("/:productId/variants", authenticateToken, requireAdmin, productVariantController.updateVariants);
+router.delete(
+  "/:productId/variants/:variantId",
+  authenticateToken,
+  requireAdmin,
+  productVariantController.deleteVariant,
+);
 router.post("/:productId/variants/sync", authenticateToken, requireAdmin, productVariantController.syncVariants);
 router.get("/:id", productController.getProductById);
 

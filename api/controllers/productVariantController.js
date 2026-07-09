@@ -40,8 +40,24 @@ const updateVariants = async (req, res) => {
   }
 };
 
+const deleteVariant = async (req, res) => {
+  try {
+    const { productId, variantId } = req.params;
+    const deleted = await ProductVariantService.deleteVariantForProduct(
+      productId,
+      variantId,
+    );
+
+    res.json(deleted);
+  } catch (error) {
+    const status = error.message.includes("no encontrada") ? 404 : 400;
+    res.status(status).json({ error: error.message });
+  }
+};
+
 module.exports = {
   listVariants,
   syncVariants,
   updateVariants,
+  deleteVariant,
 };
