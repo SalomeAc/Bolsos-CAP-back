@@ -7,6 +7,7 @@
     "start": "node index.js",
     "dev": "node index.js",
     "test": "jest --runInBand",
+    "test:coverage": "jest --coverage --runInBand",
     "test:watch": "jest --watch",
     "migrate:variant-prices": "node scripts/migrate-product-variant-prices.js",
     "backfill:catalog-quotes": "node scripts/backfill-catalog-auto-quote.js"
@@ -24,6 +25,7 @@
   },
   "homepage": "https://github.com/emilynunezordonez/Bolsos_CAP_Backend#readme",
   "dependencies": {
+    "@aws-sdk/client-rekognition": "^3.967.0",
     "bcrypt": "^6.0.0",
     "cloudinary": "^2.10.0",
     "cors": "^2.8.6",
