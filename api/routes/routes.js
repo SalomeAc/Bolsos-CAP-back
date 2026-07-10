@@ -7,8 +7,10 @@ const quotationRoutes = require("./quotationRoutes");
 const messageRoutes = require("./messageRoutes");
 const notificationRoutes = require("./notificationRoutes");
 const speechRoutes = require("./speechRoutes");
+const imageAnalysisRoutes = require("./imageAnalysisRoutes");
 
 router.use("/speech", speechRoutes);
+router.use("/image-analysis", imageAnalysisRoutes);
 router.use("/users", userRoutes);
 router.use("/products", productRoutes);
 router.use("/quotations", quotationRoutes);

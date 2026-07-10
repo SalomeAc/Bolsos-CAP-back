@@ -25,6 +25,7 @@
   },
   "homepage": "https://github.com/emilynunezordonez/Bolsos_CAP_Backend#readme",
   "dependencies": {
+    "@aws-sdk/client-rekognition": "^3.967.0",
     "bcrypt": "^6.0.0",
     "cloudinary": "^2.10.0",
     "cors": "^2.8.6",
