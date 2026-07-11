@@ -1,13 +1,17 @@
 const productDAO = require("../dao/productDAO");
 const Product = require("../models/product");
 const CloudinaryService = require("../services/cloudinaryService");
+const RekognitionService = require("../services/rekognitionService");
 const { stripCmFromList, stripCmSuffix } = require("../utils/dimensions");
 
 const toArray = (value) => {
   if (!value) return [];
 
   if (Array.isArray(value)) {
-    return value.flatMap((item) => toArray(item)).map((item) => String(item).trim()).filter(Boolean);
+    return value
+      .flatMap((item) => toArray(item))
+      .map((item) => String(item).trim())
+      .filter(Boolean);
   }
 
   if (typeof value === "string") {
@@ -51,7 +55,9 @@ const sanitizeProductBody = (body = {}) => {
 
 const createProduct = async (req, res) => {
   try {
-    const product = await productDAO.createProduct(sanitizeProductBody(req.body));
+    const product = await productDAO.createProduct(
+      sanitizeProductBody(req.body),
+    );
 
     res.status(201).json(normalizeProduct(product));
   } catch (error) {
@@ -72,7 +78,8 @@ const createProductFromForm = async (req, res) => {
 
     if (!name || !description || !type || !color || !dimensions || !materials) {
       return res.status(400).json({
-        error: "Nombre, descripción, tipo, colores, dimensiones y materiales son obligatorios",
+        error:
+          "Nombre, descripción, tipo, colores, dimensiones y materiales son obligatorios",
       });
     }
 
@@ -81,6 +88,18 @@ const createProductFromForm = async (req, res) => {
         error: "La imagen del producto es obligatoria",
       });
     }
+
+    console.log("[createProductFromForm] Validando imagen con Rekognition", {
+      hasFile: Boolean(req.file),
+      fileSize: req.file?.size,
+      mimetype: req.file?.mimetype,
+    });
+
+    await RekognitionService.validateImage(req.file.buffer);
+
+    console.log(
+      "[createProductFromForm] Rekognition OK, subiendo a Cloudinary",
+    );
 
     const uploadResult = await CloudinaryService.uploadImageBuffer(
       req.file.buffer,
@@ -162,7 +181,7 @@ const updateProduct = async (req, res) => {
       {
         new: true,
         runValidators: true,
-      }
+      },
     );
 
     res.json(normalizeProduct(updatedProduct));
@@ -192,7 +211,8 @@ const updateProductFromForm = async (req, res) => {
 
     if (!name || !description || !type || !color || !dimensions || !materials) {
       return res.status(400).json({
-        error: "Nombre, descripción, tipo, colores, dimensiones y materiales son obligatorios",
+        error:
+          "Nombre, descripción, tipo, colores, dimensiones y materiales son obligatorios",
       });
     }
 
@@ -209,7 +229,10 @@ const updateProductFromForm = async (req, res) => {
       try {
         await CloudinaryService.deleteProductImage(existingProduct);
       } catch (deleteError) {
-        console.error("No se pudo eliminar la foto anterior:", deleteError.message);
+        console.error(
+          "No se pudo eliminar la foto anterior:",
+          deleteError.message,
+        );
       }
 
       const uploadResult = await CloudinaryService.uploadImageBuffer(
@@ -230,7 +253,7 @@ const updateProductFromForm = async (req, res) => {
       {
         new: true,
         runValidators: true,
-      }
+      },
     );
 
     res.json(normalizeProduct(updatedProduct));
