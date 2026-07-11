@@ -2,10 +2,12 @@ const QuotationController = require("../../api/controllers/quotationController")
 const QuotationDAO = require("../../api/dao/quotationDAO");
 const SolicitudDAO = require("../../api/dao/solicitudDAO");
 const CloudinaryService = require("../../api/services/cloudinaryService");
+const RekognitionService = require("../../api/services/rekognitionService");
 
 jest.mock("../../api/dao/quotationDAO");
 jest.mock("../../api/dao/solicitudDAO");
 jest.mock("../../api/services/cloudinaryService");
+jest.mock("../../api/services/rekognitionService");
 jest.mock("../../api/services/productVariantService");
 jest.mock("../../api/services/notificationService", () => ({
   sendQuotationConfirmation: jest.fn().mockResolvedValue({}),
@@ -16,7 +18,9 @@ jest.mock("../../api/utils/aiWorkflowLogger", () => ({
   warn: jest.fn(),
   error: jest.fn(),
   logQuotationState: jest.fn(),
-  validateCustomProductForN8n: jest.fn().mockReturnValue({ valid: true, snapshot: {} }),
+  validateCustomProductForN8n: jest
+    .fn()
+    .mockReturnValue({ valid: true, snapshot: {} }),
 }));
 
 describe("QuotationController.createCustomQuotationFromForm (HU-12, HU-34)", () => {
@@ -25,7 +29,9 @@ describe("QuotationController.createCustomQuotationFromForm (HU-12, HU-34)", () 
     QuotationController._triggerAiQuotationWorkflow = jest
       .fn()
       .mockResolvedValue({ triggered: false });
-    QuotationController._sendNotificationAsync = jest.fn().mockResolvedValue({});
+    QuotationController._sendNotificationAsync = jest
+      .fn()
+      .mockResolvedValue({});
     QuotationController._sanitizeQuotationForClient = jest.fn((q) => q);
   });
 
@@ -142,6 +148,46 @@ describe("QuotationController.createCustomQuotationFromForm (HU-12, HU-34)", () 
           photo: "https://cdn.example.com/ref.jpg",
         }),
       }),
+    );
+  });
+
+  it("valida la imagen con Rekognition antes de subirla a Cloudinary", async () => {
+    RekognitionService.validateImage.mockResolvedValue(true);
+    CloudinaryService.uploadImageBuffer.mockResolvedValue({
+      url: "https://cdn.example.com/ref.jpg",
+      publicId: "ref-id",
+    });
+
+    const req = {
+      body: {
+        dimensions: "25x18x8",
+        color: "Rojo",
+        material: "Lana",
+        observaciones: "",
+      },
+      file: { buffer: Buffer.from("fake-image") },
+      user: { id: "user123" },
+    };
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+
+    SolicitudDAO.create.mockResolvedValue({ _id: "sol3" });
+    QuotationDAO.create.mockResolvedValue({ _id: "q3" });
+    SolicitudDAO.update.mockResolvedValue({});
+    QuotationDAO.read.mockResolvedValue({ _id: "q3" });
+    SolicitudDAO.read.mockResolvedValue({ _id: "sol3" });
+
+    await QuotationController.createCustomQuotationFromForm(req, res);
+
+    expect(RekognitionService.validateImage).toHaveBeenCalledWith(
+      req.file.buffer,
+    );
+    expect(
+      RekognitionService.validateImage.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      CloudinaryService.uploadImageBuffer.mock.invocationCallOrder[0],
     );
   });
 });
